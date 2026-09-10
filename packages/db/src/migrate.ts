@@ -6,11 +6,11 @@
  * Usage: `tsx src/migrate.ts up` | `tsx src/migrate.ts reset`
  */
 import { readdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { getDb, closeDb } from './client.js'
 
-const __dirname = dirname(fileURLToPath(import.meta.url))
+// __dirname is available natively in CommonJS output.
+// tsx (ESM dev runner) also polyfills it, so this works in both modes.
 const MIGRATIONS_DIR = join(__dirname, '..', 'migrations')
 
 async function ensureMigrationsTable(client: any): Promise<void> {
