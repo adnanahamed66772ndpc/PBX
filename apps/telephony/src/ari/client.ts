@@ -84,26 +84,33 @@ export class AriClient extends EventEmitter {
 
   /**
    * Build the WebSocket URL from the configured HTTP base.
-   * http://host:8088 → ws://host:8088/ari/events?app=…&api_password is NOT
-   * used; we rely on the Basic-Auth header carried on the WS handshake, which
-   * Asterisk's res_http_websocket accepts when http.conf enables auth.
+   * http://host:8088 → ws://host:8088/ari/events?app=…&api_key=user:pass
+   * Node 22's global WebSocket (WHATWG) does not support custom headers,
+   * so we pass ARI credentials via the api_key query parameter instead.
    */
   private wsUrl(): string {
     const http = this.url
     const ws = http.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:')
-    const params = new URLSearchParams({ app: this.app })
+    const params = new URLSearchParams({
+      app: this.app,
+      api_key: this.credentials(),
+    })
     return `${ws}/ari/events?${params.toString()}`
+  }
+
+  /** user:password for the api_key query param. */
+  private credentials(): string {
+    // Decode from the base64 auth header we already built.
+    const b64 = this.authHeader.replace(/^Basic /, '')
+    return Buffer.from(b64, 'base64').toString('utf8')
   }
 
   private openWebSocket(): Promise<void> {
     return new Promise((resolve, reject) => {
       if (this.closed) return resolve()
-      // Node ≥ 22 ships a global WebSocket (undici) whose constructor accepts
-      // an options object with `headers` for the upgrade handshake. We attach
-      // Basic auth so res_ari authorises the subscription.
-      const ws = new WebSocket(this.wsUrl(), {
-        headers: { Authorization: this.authHeader },
-      } as any)
+      // Node ≥ 22 ships a global WebSocket (WHATWG). Auth is passed via the
+      // api_key query parameter in wsUrl(); no custom headers needed.
+      const ws = new WebSocket(this.wsUrl())
       this.ws = ws
 
       ws.addEventListener('open', () => {
