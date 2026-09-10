@@ -63,7 +63,7 @@ async function onStasisStart(ari: AriClient, evt: AriEvent): Promise<void> {
 
   // Route. A Stasis arg may already encode a destination (ivr:2, queue:3);
   // otherwise treat the dialled string as an extension number (ext:…).
-  const dest = resolveDestination(dialled, tenantId)
+  const dest = await resolveDestination(dialled, tenantId)
   await route(ari, channel.id, tenantId, dest, toExt)
 }
 
