@@ -72,7 +72,7 @@ export interface ApiErrorBody {
 export interface MetricCard {
   title: string
   value: number | string
-  icon?: string
+  icon?: React.ReactNode
   delta?: string
 }
 
