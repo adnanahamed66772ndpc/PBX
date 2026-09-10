@@ -15,13 +15,7 @@
     "resolveJsonModule": true,
     "declaration": false,
     "sourceMap": true,
-    "baseUrl": "./",
-    "paths": {
-      "@pbx/common": ["../../packages/common/src/index.ts"],
-      "@pbx/common/*": ["../../packages/common/src/*"],
-      "@pbx/db": ["../../packages/db/src/index.ts"],
-      "@pbx/db/*": ["../../packages/db/src/*"]
-    }
+    "baseUrl": "./"
   },
   "include": ["src/**/*"]
 }
