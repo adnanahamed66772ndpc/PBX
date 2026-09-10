@@ -86,8 +86,8 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
     try {
       // Dynamic import so a missing/unreachable `nats` package at runtime
       // degrades to a no-op rather than crashing boot.
-      const nats = (await import('nats')) as {
-        connect: (opts: { servers: string }) => NatsPublisher
+      const nats = (await import('nats')) as unknown as {
+        connect: (opts: { servers: string }) => Promise<NatsPublisher>
       }
       const nc = await nats.connect({ servers: this.natsUrl })
       this.client = nc

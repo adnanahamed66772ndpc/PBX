@@ -1,6 +1,7 @@
 import { getDb } from '@pbx/db'
 import { Errors } from '@pbx/common'
 import type { Db } from '@pbx/db'
+import type { QueryResult } from 'pg'
 
 /**
  * Tenancy-safe query helpers.
@@ -32,8 +33,8 @@ export async function scopedQuery<T = Record<string, unknown>>(
   params: unknown[] = [],
 ): Promise<T[]> {
   const db: Db = getDb()
-  const { rows } = await db.query<T>(sql, [tenantId, ...params])
-  return rows
+  const result: QueryResult = await db.query(sql, [tenantId, ...params])
+  return result.rows as T[]
 }
 
 /**

@@ -1,19 +1,17 @@
 import { Module } from '@nestjs/common'
 import { CallControlController } from './call-control.controller'
-import { CallControlService, DefaultCallControlService } from './call-control.service'
+import { DefaultCallControlService } from './call-control.service'
 
 /**
- * Call control module.
- *
- * Binds the {@link CallControlService} interface to the
- * {@link DefaultCallControlService} stub. To wire real telephony, replace the
- * `useClass` with a provider that delegates to apps/telephony's ARI client
- * (e.g. via an RPC call or HTTP). Controllers depend on the interface token so
- * the implementation can change without touching call sites.
+ * Token for the CallControlService interface, used as a DI provider key so
+ * the interface can be swapped (real ARI impl vs stub) without touching
+ * call sites.
  */
+export const CALL_CONTROL_SERVICE = Symbol('CALL_CONTROL_SERVICE')
+
 @Module({
   controllers: [CallControlController],
-  providers: [{ provide: CallControlService, useClass: DefaultCallControlService }],
-  exports: [CallControlService],
+  providers: [{ provide: CALL_CONTROL_SERVICE, useClass: DefaultCallControlService }],
+  exports: [CALL_CONTROL_SERVICE],
 })
 export class CallControlModule {}

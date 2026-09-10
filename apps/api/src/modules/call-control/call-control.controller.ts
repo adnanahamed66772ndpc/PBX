@@ -1,6 +1,7 @@
-import { Body, Controller, Delete, Param, Post, UseInterceptors } from '@nestjs/common'
+import { Body, Controller, Delete, Inject, Param, Post, UseInterceptors } from '@nestjs/common'
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger'
-import { CallControlService } from './call-control.service'
+import { CALL_CONTROL_SERVICE } from './call-control.module'
+import type { CallControlService } from './call-control.service'
 import { OriginateCallDto } from './dto/originate-call.dto'
 import { Roles } from '../../common/decorators/roles.decorator'
 import { CurrentUser } from '../../common/tenancy/current-user.decorator'
@@ -20,7 +21,7 @@ import type { AuthenticatedUser } from '../../common/tenancy/tenant-context'
 @UseInterceptors(TenancyInterceptor)
 @Controller('calls')
 export class CallControlController {
-  constructor(private readonly callControl: CallControlService) {}
+  constructor(@Inject(CALL_CONTROL_SERVICE) private readonly callControl: CallControlService) {}
 
   @Post('originate')
   @Roles('agent', 'admin', 'owner')

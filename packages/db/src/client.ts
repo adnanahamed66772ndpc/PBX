@@ -1,8 +1,24 @@
-import { Pool, type PoolClient } from 'pg'
+import { Pool, type PoolClient, type QueryResult, type QueryResultRow } from 'pg'
 
 let pool: Pool | null = null
 
-export type Db = Pool
+/**
+ * A permissive query interface that accepts any row type generic, so callers
+ * can write `db.query<User>(sql, params)` without TS complaining about
+ * `QueryResultRow` constraints. The cast is safe because `pg` returns rows
+ * as plain objects regardless.
+ */
+export interface TypedDb extends Omit<Pool, 'query'> {
+  query<T extends QueryResultRow = any>(
+    queryConfig: string,
+    values?: unknown[],
+  ): Promise<QueryResult<T>>
+  query<T extends QueryResultRow = any>(
+    queryConfig: any,
+  ): Promise<QueryResult<T>>
+}
+
+export type Db = TypedDb
 
 /**
  * Shared PostgreSQL connection pool. Lazily created from DATABASE_URL.
