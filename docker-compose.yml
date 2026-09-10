@@ -1,0 +1,111 @@
+# ─────────────────────────────────────────────────────────────
+# PBX Platform — local development stack
+# Brings up the control-plane dependencies + telephony engines.
+# Web/API/Telephony apps run via `pnpm dev:*` on the host for HMR.
+# ─────────────────────────────────────────────────────────────
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-pbx}
+      POSTGRES_USER: ${POSTGRES_USER:-pbx}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # NOTE: migrations are applied via `pnpm db:migrate` (packages/db runner),
+      # which tracks versions in schema_migrations. Do NOT mount them to
+      # docker-entrypoint-initdb.d — that path runs unversioned on first init only.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-pbx}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  nats:
+    image: nats:2.10-alpine
+    restart: unless-stopped
+    command: ["-js", "-m", "8222"] # JetStream enabled, monitoring on 8222
+    ports:
+      - "4222:4222" # client
+      - "8222:8222" # monitoring
+
+  asterisk:
+    build:
+      context: .
+      dockerfile: docker/asterisk/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ARI_USER: ${ARI_USER:-asterisk}
+      ARI_PASSWORD: ${ARI_PASSWORD:-asteriskpwd}
+      PUBLIC_HOST: ${PUBLIC_HOST:-pbx.example.com}
+    ports:
+      # Asterisk sits behind Kamailio; only publish ARI + WSS + RTP for dev.
+      # SIP signaling is internal (kamailio → asterisk on the docker network).
+      - "8088:8088/tcp" # ARI HTTP
+      - "8089:8089/tcp" # ARI WSS
+      - "${RTP_PORT_MIN:-10000}-${RTP_PORT_MAX:-20000}:${RTP_PORT_MIN:-10000}-${RTP_PORT_MAX:-20000}/udp"
+    volumes:
+      - ./deploy/asterisk:/etc/asterisk
+      - asterisk_recordings:/var/spool/asterisk/recording
+
+  kamailio:
+    build:
+      context: .
+      dockerfile: docker/kamailio/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:-pbx.example.com}
+      SIP_DOMAIN: ${SIP_DOMAIN:-pbx.example.com}
+    ports:
+      - "5060:5060/udp" # SIP signaling (edge proxy — all ingress)
+      - "5060:5060/tcp"
+      - "5061:5061/tcp" # SIP TLS
+    volumes:
+      - ./deploy/kamailio:/etc/kamailio
+
+  rtpengine:
+    image: rtpe/rtpengine:latest
+    restart: unless-stopped
+    command:
+      - "--interface=public"
+      - "--listen-ng=0.0.0.0:2223"
+      - "--port-min=${RTP_PORT_MIN:-10000}"
+      - "--port-max=${RTP_PORT_MAX:-20000}"
+    ports:
+      - "2223:2223/udp" # ng control
+      - "${RTP_PORT_MIN:-10000}-${RTP_PORT_MAX:-20000}:${RTP_PORT_MIN:-10000}-${RTP_PORT_MAX:-20000}/udp"
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./deploy/coturn/turnserver.conf:/etc/turnserver.conf:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+  asterisk_recordings:

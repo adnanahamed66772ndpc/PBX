@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "module": "CommonJS",
+    "target": "ES2022",
+    "moduleResolution": "Node",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true,
+    "baseUrl": "./",
+    "paths": {
+      "@pbx/common": ["../../packages/common/src/index.ts"],
+      "@pbx/common/*": ["../../packages/common/src/*"],
+      "@pbx/db": ["../../packages/db/src/index.ts"],
+      "@pbx/db/*": ["../../packages/db/src/*"]
+    }
+  },
+  "include": ["src/**/*"]
+}

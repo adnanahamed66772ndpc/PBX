@@ -1,0 +1,23 @@
+{
+  "name": "@pbx/telephony",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Node ARI call-control service for the PBX/UC platform.",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@pbx/common": "workspace:*",
+    "@pbx/db": "workspace:*",
+    "nats": "^2.10"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^22.0.0"
+  }
+}

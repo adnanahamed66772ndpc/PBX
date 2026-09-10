@@ -1,0 +1,24 @@
+{
+  "name": "pbx-platform",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant PBX/UC platform — control plane + telephony stack.",
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @pbx/web dev",
+    "dev:api": "pnpm --filter @pbx/api start:dev",
+    "dev:telephony": "pnpm --filter @pbx/telephony dev",
+    "build": "pnpm -r --filter=./apps/* build",
+    "db:migrate": "pnpm --filter @pbx/db migrate",
+    "db:reset": "pnpm --filter @pbx/db reset",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "prettier": "^3.2.5"
+  }
+}

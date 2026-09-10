@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Atlassian-inspired design token system.
+ * Raw brand palette + semantic token aliases. Components must reference the
+ * semantic tokens (var(--token-*)), NOT the raw hex values, so the `.dark`
+ * override block flips every surface at once.
+ */
+
+:root {
+  /* --- Raw brand palette (Atlassian Design System inspired) --- */
+  --color-brand: #0052cc; /* blue 500 — primary actions */
+  --color-brand-700: #0747a6; /* hover / pressed */
+  --color-accent: #36b37e; /* green 500 — success */
+  --color-accent-700: #006644;
+  --color-danger: #de350b; /* red 500 — destructive */
+  --color-danger-700: #a31509;
+  --color-warning: #ff8b00; /* orange 500 — caution */
+  --color-neutral-bg: #f4f5f7; /* neutral 100 — page background */
+  --color-text-primary: #172b4d; /* neutral 900 — headings/body */
+
+  /* --- Neutrals --- */
+  --color-border: #dfe1e6; /* neutral 200 */
+  --color-border-subtle: #ebecf0; /* neutral 100 */
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f4f5f7;
+  --color-surface-hover: #ebecf0;
+  --color-text-muted: #6b778c; /* neutral 600 */
+  --color-text-inverted: #ffffff;
+
+  /* --- Spacing scale (4px base) --- */
+  --space-1: 0.25rem; /* 4px */
+  --space-2: 0.5rem; /* 8px */
+  --space-3: 0.75rem; /* 12px */
+  --space-4: 1rem; /* 16px */
+  --space-6: 1.5rem; /* 24px */
+  --space-8: 2rem; /* 32px */
+
+  /* --- Radius --- */
+  --radius-sm: 0.125rem; /* 2px */
+  --radius-md: 0.375rem; /* 6px */
+  --radius-lg: 0.5rem; /* 8px */
+
+  /* --- Typography --- */
+  --font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, sans-serif;
+
+  /* --- Semantic token aliases (light defaults) --- */
+  --token-bg: var(--color-neutral-bg);
+  --token-bg-subtle: var(--color-surface-subtle);
+  --token-surface: var(--color-surface);
+  --token-surface-subtle: var(--color-surface-subtle);
+  --token-surface-hover: var(--color-surface-hover);
+  --token-border: var(--color-border);
+  --token-border-subtle: var(--color-border-subtle);
+  --token-text-primary: var(--color-text-primary);
+  --token-text-muted: var(--color-text-muted);
+  --token-text-inverted: var(--color-text-inverted);
+  --token-primary: var(--color-brand);
+  --token-primary-hover: var(--color-brand-700);
+  --token-success: var(--color-accent);
+  --token-success-hover: var(--color-accent-700);
+  --token-danger: var(--color-danger);
+  --token-danger-hover: var(--color-danger-700);
+  --token-warning: var(--color-warning);
+}
+
+.dark {
+  /* --- Semantic token aliases (dark) --- */
+  --color-neutral-bg: #0f1419;
+  --token-bg: #0f1419;
+  --token-bg-subtle: #161b22;
+  --token-surface: #161b22;
+  --token-surface-subtle: #1c2229;
+  --token-surface-hover: #232a33;
+  --token-border: #30363d;
+  --token-border-subtle: #232a33;
+  --token-text-primary: #e6edf3;
+  --token-text-muted: #8b949e;
+  --token-text-inverted: #ffffff;
+  --token-primary: #3584fc;
+  --token-primary-hover: #1f6feb;
+  --token-success: #3fb950;
+  --token-success-hover: #2ea043;
+  --token-danger: #f85149;
+  --token-danger-hover: #da3633;
+  --token-warning: #d29922;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-family-base);
+    color: var(--token-text-primary);
+    background-color: var(--token-bg);
+  }
+
+  body {
+    @apply bg-bg text-text-primary font-base antialiased;
+    min-height: 100vh;
+  }
+
+  /* Accessible focus ring on all interactive elements. */
+  a:focus-visible,
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--token-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+}
+
+@layer utilities {
+  /* Keyboard-accessible visually-hidden helper for screen-reader labels. */
+  .sr-only-focusable:focus:not(:focus-visible) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}

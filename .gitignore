@@ -1,0 +1,35 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# build output
+dist/
+build/
+.next/
+out/
+
+# env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+deploy/secrets/
+
+# logs
+*.log
+logs/
+
+# editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# data volumes (local dev)
+.data/
+
+# coverage
+coverage/
+.nyc_output/

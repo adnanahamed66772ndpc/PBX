@@ -1,0 +1,8 @@
+# dispatcher.list — Asterisk node set for Kamailio dispatcher module.
+# Format: set_id destination flags priority attrs
+# Two Asterisk nodes; weights balance roughly evenly. In single-host dev only
+# node 1 (asterisk) is reachable; node 2 (asterisk2) is provisioned for the
+# HA deployment described in deploy/README.md.
+
+1 sip:asterisk:5060 weight=5 ;asterisk-node-1
+2 sip:asterisk2:5060 weight=5 ;asterisk-node-2

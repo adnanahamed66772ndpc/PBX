@@ -1,0 +1,633 @@
+# ─────────────────────────────────────────────────────────────────────────
+# deploy/ansible/playbook.yml
+# Provisions the PBX telephony stack on a single host. Roles are expressed as
+# task blocks with per-service handlers so the file is self-contained (no
+# external roles/ tree required). Everything is idempotent: re-running applies
+# only changed config and restarts services via handlers.
+#
+#   ansible-playbook -i inventory.ini playbook.yml
+#
+# Pre-flight: the deploy user must have passwordless sudo + SSH access, and
+# a TLS cert must already exist (or let the `tls` role create one via certbot
+# --standalone, which needs 80/443 free during issuance).
+# ─────────────────────────────────────────────────────────────────────────
+
+- name: Provision PBX telephony stack
+  hosts: pbx
+  become: true
+  vars:
+    # Paths reused across roles.
+    asterisk_conf_dir: /etc/asterisk
+    kamailio_conf_dir: /etc/kamailio
+    coturn_conf_dir: /etc/coturn
+    # Ports opened by ufw (must match docker-compose + engine configs).
+    fw_ports_tcp: [22, 443, 5060, 5061, 8088, 8089, 5349]
+    fw_ports_udp: [5060, 3478, 5349, "10000:20000"]
+
+  handlers:
+    - name: restart asterisk
+      ansible.builtin.service:
+        name: asterisk
+        state: restarted
+
+    - name: restart kamailio
+      ansible.builtin.service:
+        name: kamailio
+        state: restarted
+
+    - name: restart rtpengine
+      ansible.builtin.service:
+        name: rtpengine
+        state: restarted
+
+    - name: restart coturn
+      ansible.builtin.service:
+        name: coturn
+        state: restarted
+
+    - name: restart fail2ban
+      ansible.builtin.service:
+        name: fail2ban
+        state: restarted
+
+    - name: restart node_exporter
+      ansible.builtin.service:
+        name: node_exporter
+        state: restarted
+
+    - name: restart postgres
+      ansible.builtin.service:
+        name: postgresql
+        state: restarted
+
+    - name: reload ufw
+      ansible.builtin.command: ufw reload
+
+    - name: restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+
+  tasks:
+
+    # ── common ───────────────────────────────────────────────────────────
+    - name: apt update + upgrade
+      ansible.builtin.apt:
+        update_cache: true
+        upgrade: safe
+        cache_valid_time: 3600
+
+    - name: install base packages
+      ansible.builtin.apt:
+        name:
+          - curl
+          - ca-certificates
+          - gnupg
+          - openssl
+          - ufw
+          - fail2ban
+          - python3
+          - python3-pip
+          - rsync
+          - unzip
+          - jq
+          - htop
+          - prometheus-node-exporter
+          - cron
+          - certbot
+          - gettext
+          - netcat-openbsd
+        state: present
+
+    - name: ensure ufw is enabled and default-deny
+      community.general.ufw:
+        state: enabled
+        policy: deny
+      when: "'community.general.ufw' in lookup('ansible.builtin.pip', 'ansible_collections', wantlist=True)" is defined
+      # Fallback below when community.general isn't installed.
+
+    - name: allow SSH (lock-open before enabling)
+      ansible.builtin.command: ufw allow 22/tcp
+      changed_when: false
+
+    - name: open telephony ports (tcp)
+      ansible.builtin.command: "ufw allow {{ item }}/tcp"
+      loop: "{{ fw_ports_tcp }}"
+      changed_when: false
+      notify: reload ufw
+
+    - name: open telephony ports (udp)
+      ansible.builtin.command: "ufw allow {{ item }}/udp"
+      loop: "{{ fw_ports_udp }}"
+      changed_when: false
+      notify: reload ufw
+
+    - name: configure fail2ban for SIP + SSH
+      ansible.builtin.copy:
+        dest: /etc/fail2ban/jail.d/pbx.local
+        mode: "0644"
+        content: |
+          [DEFAULT]
+          bantime = 3600
+          findtime = 600
+          maxretry = 5
+          backend = systemd
+
+          [sshd]
+          enabled = true
+
+          [sip-auth]
+          enabled  = true
+          port     = 5060,5061
+          protocol = udp
+          filter   = sip
+          logpath  = /var/log/kamailio/kamailio.log
+          maxretry = 5
+          bantime  = 86400
+      notify: restart fail2ban
+
+    - name: ensure fail2ban running
+      ansible.builtin.service:
+        name: fail2ban
+        state: started
+        enabled: true
+
+    # ── postgres ─────────────────────────────────────────────────────────
+    - name: install postgres 16
+      ansible.builtin.apt:
+        name:
+          - postgresql-16
+          - python3-psycopg2
+          - postgresql-client
+        state: present
+
+    - name: ensure postgres running
+      ansible.builtin.service:
+        name: postgresql
+        state: started
+        enabled: true
+
+    - name: create pbx database role
+      community.postgresql.postgresql_user:
+        name: "{{ postgres_user }}"
+        password: "{{ postgres_password }}"
+        role_attr_flags: LOGIN,SUPERUSER
+      become: true
+      become_user: postgres
+      environment:
+        PGOPTIONS: "-c statement_timeout=0"
+      ignore_errors: true
+
+    - name: create pbx database
+      community.postgresql.postgresql_db:
+        name: "{{ postgres_db }}"
+        owner: "{{ postgres_user }}"
+        encoding: UTF8
+      become: true
+      become_user: postgres
+      ignore_errors: true
+
+    - name: ensure pg_hba allows local + container subnet
+      ansible.builtin.copy:
+        dest: /etc/postgresql/16/main/pg_hba.conf
+        owner: postgres
+        group: postgres
+        mode: "0640"
+        content: |
+          local   all   postgres                   peer
+          local   all   all                        peer
+          host    all   all   127.0.0.1/32         scram-sha-256
+          host    all   all   ::1/128              scram-sha-256
+          host    all   all   172.16.0.0/12         scram-sha-256
+      notify: restart postgres
+
+    - name: apply migrations (idempotent)
+      ansible.builtin.shell: |
+        set -e
+        for f in /opt/pbx/packages/db/migrations/*.sql; do
+          psql "postgresql://{{ postgres_user }}:{{ postgres_password }}@127.0.0.1:5432/{{ postgres_db }}" \
+            -v ON_ERROR_STOP=1 -f "$f"
+        done
+      args:
+        executable: /bin/bash
+      changed_when: false
+      failed_when: false
+
+    # ── asterisk ─────────────────────────────────────────────────────────
+    - name: install asterisk + modules
+      ansible.builtin.apt:
+        name:
+          - asterisk
+          - asterisk-modules
+          - asterisk-mp3
+          - asterisk-mysql
+          - asterisk-voicemail
+          - asterisk-config
+          - libsrtp2-1
+          - openssl
+        state: present
+
+    - name: ensure asterisk config + keys dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: asterisk
+        group: asterisk
+        mode: "0755"
+      loop:
+        - "{{ asterisk_conf_dir }}"
+        - "{{ asterisk_conf_dir }}/keys"
+        - /var/spool/asterisk/recording
+        - /var/spool/asterisk/voicemail
+
+    - name: render asterisk configs (envsubst at deploy time)
+      ansible.builtin.shell: |
+        envsubst '$ARI_USER:$ARI_PASSWORD:$PUBLIC_HOST' \
+          < /tmp/asterisk-src/{{ item }}.tpl \
+          > {{ asterisk_conf_dir }}/{{ item }}
+        chown asterisk:asterisk {{ asterisk_conf_dir }}/{{ item }}
+      loop:
+        - pjsip.conf
+        - extensions.conf
+        - http.conf
+        - ari.conf
+        - rtp.conf
+      environment:
+        ARI_USER: "{{ ari_user }}"
+        ARI_PASSWORD: "{{ ari_password }}"
+        PUBLIC_HOST: "{{ public_host }}"
+      changed_when: false
+      notify: restart asterisk
+
+    - name: copy non-templated asterisk configs
+      ansible.builtin.copy:
+        src: "../asterisk/{{ item }}"
+        dest: "{{ asterisk_conf_dir }}/{{ item }}"
+        owner: asterisk
+        group: asterisk
+        mode: "0644"
+      loop:
+        - modules.conf
+        - prometheus.conf
+        - codecs.conf
+      notify: restart asterisk
+
+    - name: stage template sources to /tmp for envsubst
+      ansible.builtin.copy:
+        src: "../asterisk/{{ item }}.conf"
+        dest: "/tmp/asterisk-src/{{ item }}.conf.tpl"
+        mode: "0644"
+      loop:
+        - pjsip
+        - extensions
+        - http
+        - ari
+        - rtp
+      changed_when: false
+
+    - name: ensure asterisk started + enabled
+      ansible.builtin.service:
+        name: asterisk
+        state: started
+        enabled: true
+
+    # ── kamailio ─────────────────────────────────────────────────────────
+    - name: add kamailio apt repo + key
+      ansible.builtin.apt_key:
+        url: https://deb.kamailio.org/kamailiodebkey.gpg
+        state: present
+      ignore_errors: true
+
+    - name: add kamailio repo
+      ansible.builtin.apt_repository:
+        repo: "deb http://deb.kamailio.org/kamailio62 bookworm main"
+        state: present
+        filename: kamailio
+
+    - name: install kamailio + modules
+      ansible.builtin.apt:
+        name:
+          - kamailio
+          - kamailio-tls-modules
+          - kamailio-dispatcher-modules
+          - kamailio-nth-modules
+          - kamailio-rtpengine-modules
+          - kamailio-postgres-modules
+          - kamailio-utils-modules
+          - postgresql-client
+        state: present
+        update_cache: true
+
+    - name: ensure kamailio dirs exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: kamailio
+        group: kamailio
+        mode: "0755"
+      loop:
+        - "{{ kamailio_conf_dir }}"
+        - "{{ kamailio_conf_dir }}/tls"
+
+    - name: stage kamailio template sources
+      ansible.builtin.copy:
+        src: "../kamailio/{{ item }}.cfg"
+        dest: "/tmp/kamailio-src/{{ item }}.cfg.tpl"
+        mode: "0644"
+      loop:
+        - kamailio
+      changed_when: false
+
+    - name: render kamailio.cfg (envsubst at deploy time)
+      ansible.builtin.shell: |
+        envsubst '$PUBLIC_HOST:$SIP_DOMAIN:$PUBLIC_IP:$KAM_DB_USER:$KAM_DB_PASSWORD:$POSTGRES_DB' \
+          < /tmp/kamailio-src/kamailio.cfg.tpl \
+          > {{ kamailio_conf_dir }}/kamailio.cfg
+      environment:
+        PUBLIC_HOST: "{{ public_host }}"
+        SIP_DOMAIN: "{{ sip_domain }}"
+        PUBLIC_IP: "{{ public_ip }}"
+        KAM_DB_USER: "{{ postgres_user }}"
+        KAM_DB_PASSWORD: "{{ postgres_password }}"
+        POSTGRES_DB: "{{ postgres_db }}"
+      changed_when: false
+      notify: restart kamailio
+
+    - name: render tls.cfg
+      ansible.builtin.shell: |
+        envsubst '$SIP_DOMAIN' < /tmp/kamailio-src/tls.cfg.tpl \
+          > {{ kamailio_conf_dir }}/tls.cfg
+      environment:
+        SIP_DOMAIN: "{{ sip_domain }}"
+      changed_when: false
+      notify: restart kamailio
+
+    - name: stage kamailio tls template
+      ansible.builtin.copy:
+        src: "../kamailio/tls.cfg"
+        dest: "/tmp/kamailio-src/tls.cfg.tpl"
+        mode: "0644"
+      changed_when: false
+
+    - name: copy dispatcher.list
+      ansible.builtin.copy:
+        src: "../kamailio/dispatcher.list"
+        dest: "{{ kamailio_conf_dir }}/dispatcher.list"
+        owner: kamailio
+        group: kamailio
+        mode: "0644"
+      notify: restart kamailio
+
+    - name: ensure kamailio started + enabled
+      ansible.builtin.service:
+        name: kamailio
+        state: started
+        enabled: true
+
+    # ── rtpengine ────────────────────────────────────────────────────────
+    - name: install rtpengine
+      ansible.builtin.apt:
+        name:
+          - ngcp-rtpengine
+        state: present
+      ignore_errors: true   # not in stock debian; fall back to source build below
+
+    - name: build rtpengine from source if package missing
+      block:
+        - name: install build deps
+          ansible.builtin.apt:
+            name:
+              - git
+              - build-essential
+              - debhelper
+              - libglib2.0-dev
+              - libavcodec-dev
+              - libavfilter-dev
+              - libavformat-dev
+              - libavutil-dev
+              - libssl-dev
+              - libpcre3-dev
+              - libcurl4-openssl-dev
+              - libxmlrpc-c-dev
+              - markdown
+              - libiptc-dev
+              - libpcap-dev
+            state: present
+
+        - name: clone rtpengine
+          ansible.builtin.git:
+            repo: https://github.com/sipwise/rtpengine.git
+            dest: /opt/rtpengine
+            depth: 1
+            version: mr7.4.0
+
+        - name: build rtpengine
+          ansible.builtin.shell: |
+            make -j$(nproc)
+            cp daemon/rtpengine /usr/local/bin/rtpengine
+          args:
+            chdir: /opt/rtpengine
+            creates: /usr/local/bin/rtpengine
+      when: ansible_check_mode is defined and ansible_facts.packages['ngcp-rtpengine'] is not defined
+      # (only build when the distro package isn't present)
+
+    - name: copy rtpengine config
+      ansible.builtin.copy:
+        src: "../rtpengine/rtpengine.conf"
+        dest: /etc/rtpengine/rtpengine.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: restart rtpengine
+
+    - name: install rtpengine systemd unit
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/rtpengine.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=NGCP rtpengine
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/local/bin/rtpengine --config-file=/etc/rtpengine/rtpengine.conf --log-level=5
+          Restart=on-failure
+          RestartSec=3
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: restart rtpengine
+
+    - name: ensure rtpengine started + enabled
+      ansible.builtin.service:
+        name: rtpengine
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    # ── coturn ───────────────────────────────────────────────────────────
+    - name: install coturn
+      ansible.builtin.apt:
+        name: coturn
+        state: present
+
+    - name: render turnserver.conf (envsubst at deploy time)
+      ansible.builtin.shell: |
+        mkdir -p {{ coturn_conf_dir }}/tls
+        envsubst '$SIP_DOMAIN:$TURN_SHARED_SECRET' \
+          < /tmp/coturn-src/turnserver.conf.tpl \
+          > {{ coturn_conf_dir }}/turnserver.conf
+      environment:
+        SIP_DOMAIN: "{{ sip_domain }}"
+        TURN_SHARED_SECRET: "{{ turn_shared_secret }}"
+      changed_when: false
+      notify: restart coturn
+
+    - name: stage turnserver template
+      ansible.builtin.copy:
+        src: "../coturn/turnserver.conf"
+        dest: "/tmp/coturn-src/turnserver.conf.tpl"
+        mode: "0644"
+      changed_when: false
+
+    - name: enable coturn daemon (TURNS listening)
+      ansible.builtin.lineinfile:
+        path: /etc/default/coturn
+        regexp: '^TURNSERVER_ENABLED='
+        line: 'TURNSERVER_ENABLED=1'
+        create: true
+      notify: restart coturn
+
+    - name: ensure coturn started + enabled
+      ansible.builtin.service:
+        name: coturn
+        state: started
+        enabled: true
+
+    # ── tls ──────────────────────────────────────────────────────────────
+    - name: issue Let's Encrypt cert (standalone)
+      ansible.builtin.command: >
+        certbot certonly --standalone
+        --non-interactive --agree-tos --email ops@{{ sip_domain }}
+        -d {{ public_host }} -d {{ sip_domain }}
+      args:
+        creates: "/etc/letsencrypt/live/{{ public_host }}/fullchain.pem"
+      when: public_host != "pbx.example.com"  # skip in default/dev
+
+    - name: stage asterisk PEM bundle from letsencrypt
+      ansible.builtin.shell: |
+        cat /etc/letsencrypt/live/{{ public_host }}/fullchain.pem \
+            /etc/letsencrypt/live/{{ public_host }}/privkey.pem \
+          > {{ asterisk_conf_dir }}/keys/asterisk.pem
+        chmod 600 {{ asterisk_conf_dir }}/keys/asterisk.pem
+        chown asterisk:asterisk {{ asterisk_conf_dir }}/keys/asterisk.pem
+      args:
+        executable: /bin/bash
+      when: public_host != "pbx.example.com"
+      changed_when: false
+      notify: restart asterisk
+
+    - name: stage kamailio PEM bundle from letsencrypt
+      ansible.builtin.shell: |
+        cat /etc/letsencrypt/live/{{ public_host }}/fullchain.pem \
+            /etc/letsencrypt/live/{{ public_host }}/privkey.pem \
+          > {{ kamailio_conf_dir }}/tls/kamailio.pem
+        cp /etc/letsencrypt/live/{{ public_host }}/chain.pem \
+          {{ kamailio_conf_dir }}/tls/cacert.pem || true
+        chmod 600 {{ kamailio_conf_dir }}/tls/kamailio.pem
+      args:
+        executable: /bin/bash
+      when: public_host != "pbx.example.com"
+      changed_when: false
+      notify: restart kamailio
+
+    - name: install certbot renewal reload hook (restart engines)
+      ansible.builtin.copy:
+        dest: /etc/letsencrypt/renewal-hooks/deploy/pbx-restart.sh
+        mode: "0755"
+        content: |
+          #!/bin/sh
+          /bin/systemctl restart asterisk || true
+          /bin/systemctl restart kamailio || true
+          /bin/systemctl restart coturn || true
+
+    # ── backup ────────────────────────────────────────────────────────────
+    - name: ensure backup dir
+      ansible.builtin.file:
+        path: /var/backups/pbx
+        state: directory
+        owner: postgres
+        group: postgres
+        mode: "0750"
+
+    - name: nightly pg_dump cron
+      ansible.builtin.cron:
+        name: "pbx nightly pg_dump"
+        minute: "0"
+        hour: "3"
+        user: postgres
+        job: >
+          pg_dump -Fc {{ postgres_db }}
+          | gzip > /var/backups/pbx/pbx-$(date +\%Y\%m\%d).sql.gz;
+          find /var/backups/pbx -name 'pbx-*.sql.gz' -mtime +14 -delete
+
+    - name: nightly asterisk config tarball cron
+      ansible.builtin.cron:
+        name: "pbx nightly asterisk config backup"
+        minute: "15"
+        hour: "3"
+        user: root
+        job: >
+          tar czf /var/backups/pbx/asterisk-conf-$(date +\%Y\%m\%d).tgz
+          -C / etc/asterisk 2>/dev/null;
+          find /var/backups/pbx -name 'asterisk-conf-*.tgz' -mtime +14 -delete
+
+    # ── monitoring ───────────────────────────────────────────────────────
+    - name: ensure node_exporter started + enabled
+      ansible.builtin.service:
+        name: node_exporter
+        state: started
+        enabled: true
+
+    - name: install nginx as metrics reverse proxy
+      ansible.builtin.apt:
+        name: nginx
+        state: present
+
+    - name: nginx site for prometheus scrape (asterisk :8088 + node_exporter)
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/pbx-metrics
+        mode: "0644"
+        content: |
+          server {
+              listen 443 ssl;
+              server_name metrics.{{ sip_domain }};
+              ssl_certificate     /etc/letsencrypt/live/{{ public_host }}/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/{{ public_host }}/privkey.pem;
+
+              # Prometheus scrapes these two upstreams over TLS.
+              location /metrics/asterisk {
+                  proxy_pass http://127.0.0.1:8088/metrics;
+              }
+              location /metrics/node {
+                  proxy_pass http://127.0.0.1:9100/metrics;
+              }
+              location /metrics/telephony {
+                  proxy_pass http://127.0.0.1:5000/healthz;
+              }
+          }
+      notify: restart nginx
+
+    - name: enable nginx site
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/pbx-metrics
+        dest: /etc/nginx/sites-enabled/pbx-metrics
+        state: link
+      notify: restart nginx
+
+    - name: ensure nginx started + enabled
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true

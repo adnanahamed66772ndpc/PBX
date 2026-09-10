@@ -1,0 +1,258 @@
+openapi: 3.0.3
+info:
+  title: PBX Control Plane API
+  version: 0.1.0
+  description: >
+    Multi-tenant PBX/UC platform control plane. All tenant-scoped endpoints are
+    isolated by the authenticated user's tenant_id; the tenant id is taken from
+    the validated JWT, never from request body or query.
+    A live, generated spec is served at /docs by @nestjs/swagger. This file is a
+    hand-written reference subset (auth/login, tenants, extensions, cdr) kept in
+    version control for review and onboarding.
+servers:
+  - url: http://localhost:4000
+    description: Local development
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: not_found
+            message:
+              type: string
+              example: extension not found
+            details:
+              type: object
+              additionalProperties: true
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email, example: owner@example.com }
+        password: { type: string, minLength: 8, example: s3cret-pass }
+    TokenPair:
+      type: object
+      required: [accessToken, refreshToken, expiresIn, user]
+      properties:
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        expiresIn: { type: string, example: 15m }
+        user: { $ref: '#/components/schemas/User' }
+    User:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        tenantId: { type: integer, example: 1 }
+        email: { type: string, example: owner@example.com }
+        fullName: { type: string, nullable: true }
+        role: { type: string, enum: [owner, admin, manager, agent, user] }
+        presence: { type: string, enum: [available, away, dnd, offline] }
+        active: { type: boolean }
+        twoFactorEnabled: { type: boolean }
+    Tenant:
+      type: object
+      properties:
+        id: { type: integer, example: 1 }
+        name: { type: string, example: Acme Telecom }
+        domain: { type: string, nullable: true, example: pbx.acme.com }
+        plan: { type: string, example: pro }
+        active: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    Extension:
+      type: object
+      properties:
+        id: { type: integer, example: 10 }
+        tenant_id: { type: integer, example: 1 }
+        user_id: { type: integer, nullable: true }
+        ext_number: { type: string, example: '1001' }
+        secret: { type: string, example: a1b2c3d4e5f6 }
+        caller_id: { type: string, nullable: true }
+        context: { type: string, example: default }
+        webrtc: { type: boolean }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    CallRecord:
+      type: object
+      properties:
+        id: { type: integer }
+        tenant_id: { type: integer }
+        call_id: { type: string, example: 1715700000.1 }
+        channel_id: { type: string, nullable: true }
+        from_ext: { type: string, nullable: true, example: '1001' }
+        to_ext: { type: string, nullable: true, example: '1002' }
+        did: { type: string, nullable: true }
+        direction: { type: string, enum: [in, out, internal] }
+        status: { type: string, enum: [answered, noanswer, busy, failed] }
+        start_time: { type: string, format: date-time }
+        answer_time: { type: string, format: date-time, nullable: true }
+        end_time: { type: string, format: date-time, nullable: true }
+        duration_sec: { type: integer }
+        billsec: { type: integer }
+        disposition: { type: string, nullable: true }
+        recording_url: { type: string, nullable: true }
+    CdrPage:
+      type: object
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/CallRecord' }
+        page: { type: integer, example: 1 }
+        limit: { type: integer, example: 25 }
+        total: { type: integer, example: 137 }
+paths:
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: Email + password login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LoginRequest' }
+      responses:
+        '200':
+          description: Access + refresh token pair
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TokenPair' }
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /tenants:
+    get:
+      tags: [tenants]
+      summary: List all tenants (platform admin only)
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: All tenants
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Tenant' }
+        '403':
+          description: Insufficient permissions
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /tenants/me:
+    get:
+      tags: [tenants]
+      summary: Get the caller's own tenant
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: The authenticated user's tenant
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Tenant' }
+  /extensions:
+    get:
+      tags: [extensions]
+      summary: List extensions in the current tenant
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Extensions scoped to the caller's tenant
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Extension' }
+    post:
+      tags: [extensions]
+      summary: Provision a new SIP extension (generates a secret)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ext_number]
+              properties:
+                ext_number: { type: string, example: '1001' }
+                userId: { type: integer, nullable: true }
+                caller_id: { type: string }
+                context: { type: string }
+                webrtc: { type: boolean }
+      responses:
+        '201':
+          description: Extension created with generated secret
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Extension' }
+        '409':
+          description: Extension number already exists
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /cdr:
+    get:
+      tags: [cdr]
+      summary: List call records with filters + pagination (read-only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: query, name: page, schema: { type: integer, minimum: 1, default: 1 } }
+        - { in: query, name: limit, schema: { type: integer, minimum: 1, maximum: 200, default: 25 } }
+        - { in: query, name: direction, schema: { type: string, enum: [in, out, internal] } }
+        - { in: query, name: status, schema: { type: string, enum: [answered, noanswer, busy, failed] } }
+        - { in: query, name: fromExt, schema: { type: string } }
+        - { in: query, name: toExt, schema: { type: string } }
+        - { in: query, name: did, schema: { type: string } }
+        - { in: query, name: from, schema: { type: string, format: date-time }, description: 'start_time >= from' }
+        - { in: query, name: to, schema: { type: string, format: date-time }, description: 'start_time < to' }
+      responses:
+        '200':
+          description: Paginated list of CDR rows
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CdrPage' }
+  /cdr/{id}:
+    get:
+      tags: [cdr]
+      summary: Get a single call record by id
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: A single CDR row
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CallRecord' }
+        '404':
+          description: Call record not found
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+  /health:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: ok }
+                  ts: { type: string, format: date-time }
