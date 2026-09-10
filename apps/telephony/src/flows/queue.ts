@@ -17,8 +17,8 @@
  * in-memory and reset on restart (a production version would persist it in
  * Redis via the shared client).
  */
-import { createLogger, type Extension } from '@pbx/db'
-import { tx } from '@pbx/db'
+import { createLogger } from '@pbx/common'
+import { tx, type Extension } from '@pbx/db'
 import type { AriClient } from '../ari/client.js'
 import { recordAnswer } from '../cdr/recorder.js'
 import { publishEvent } from '../events/publisher.js'

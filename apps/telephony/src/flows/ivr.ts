@@ -14,8 +14,8 @@
  * See telephony plan: IVR menus are first-class tenant resources; the menu
  * is authored in the control plane (apps/api) and stored in the `ivrs` table.
  */
-import { createLogger, type Ivr } from '@pbx/db'
-import { tx } from '@pbx/db'
+import { createLogger } from '@pbx/common'
+import { tx, type Ivr } from '@pbx/db'
 import type { AriClient } from '../ari/client.js'
 import type { AriEvent } from '../ari/types.js'
 import { recordAnswer } from '../cdr/recorder.js'

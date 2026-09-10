@@ -18,18 +18,34 @@ function fmt(level: Level, scope: string, msg: string, meta?: unknown): string {
   }
 }
 
+/**
+ * Normalises arguments to support both calling conventions:
+ *   log.info('message', { meta: true })   ← canonical (msg, meta)
+ *   log.info({ meta: true }, 'message')   ← pino-style (meta, msg)
+ */
+function normaliseArgs(first: unknown, second: unknown): { msg: string; meta?: unknown } {
+  if (typeof first === 'string') {
+    return { msg: first, meta: second }
+  }
+  return { msg: typeof second === 'string' ? second : '', meta: first }
+}
+
 export function createLogger(scope: string) {
   return {
-    debug: (msg: string, meta?: unknown) => {
+    debug: (first: unknown, second?: unknown) => {
+      const { msg, meta } = normaliseArgs(first, second)
       if (LEVELS[minLevel] <= LEVELS.debug) console.debug(fmt('debug', scope, msg, meta))
     },
-    info: (msg: string, meta?: unknown) => {
+    info: (first: unknown, second?: unknown) => {
+      const { msg, meta } = normaliseArgs(first, second)
       if (LEVELS[minLevel] <= LEVELS.info) console.info(fmt('info', scope, msg, meta))
     },
-    warn: (msg: string, meta?: unknown) => {
+    warn: (first: unknown, second?: unknown) => {
+      const { msg, meta } = normaliseArgs(first, second)
       if (LEVELS[minLevel] <= LEVELS.warn) console.warn(fmt('warn', scope, msg, meta))
     },
-    error: (msg: string, meta?: unknown) => {
+    error: (first: unknown, second?: unknown) => {
+      const { msg, meta } = normaliseArgs(first, second)
       console.error(fmt('error', scope, msg, meta))
     },
   }
