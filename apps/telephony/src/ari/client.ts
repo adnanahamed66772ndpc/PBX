@@ -103,7 +103,7 @@ export class AriClient extends EventEmitter {
       // Basic auth so res_ari authorises the subscription.
       const ws = new WebSocket(this.wsUrl(), {
         headers: { Authorization: this.authHeader },
-      })
+      } as any)
       this.ws = ws
 
       ws.addEventListener('open', () => {
