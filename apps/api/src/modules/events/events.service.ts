@@ -78,6 +78,58 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
     return this.client !== null
   }
 
+  /**
+   * Subscribe to every telephony event subject (`pbx.<tenant>.<cat>.<name>`)
+   * and forward each parsed {@link TelephonyEvent} to `handler`. Used by the
+   * realtime WebSocket gateway to relay events to browser clients.
+   *
+   * Multiple handlers are supported; each subscription is created once.
+   * When NATS is unavailable the handler simply never fires — callers must
+   * tolerate that (the gateway does: clients just see no events).
+   */
+  async onEvent(handler: (event: TelephonyEvent, subject: string) => void): Promise<void> {
+    this.eventHandlers.push(handler)
+    await this.ensureSubscription()
+  }
+
+  private async ensureSubscription(): Promise<void> {
+    if (!this.client || this.subscribed) return
+    if (this.subscribing) return this.subscribing
+    this.subscribing = (async () => {
+      try {
+        const nc = this.client as unknown as {
+          subscribe: (
+            subject: string,
+            opts?: { callback?: (err: unknown, msg: { data: Uint8Array; subject: string }) => void },
+          ) => { unsubscribe(): void }
+        }
+        const decoder = new TextDecoder()
+        nc.subscribe('pbx.*.*.*', {
+          callback: (err, msg) => {
+            if (err || !msg) return
+            try {
+              const evt = JSON.parse(decoder.decode(msg.data)) as TelephonyEvent
+              for (const handler of this.eventHandlers) handler(evt, msg.subject)
+            } catch {
+              this.logger.warn(`Unparseable NATS message on ${msg.subject}`)
+            }
+          },
+        })
+        this.subscribed = true
+        this.logger.log('Subscribed to pbx.*.*.* event subjects')
+      } catch (err) {
+        this.logger.warn(`NATS subscribe failed (${(err as Error).message})`)
+      } finally {
+        this.subscribing = null
+      }
+    })()
+    return this.subscribing
+  }
+
+  private subscribed = false
+  private subscribing: Promise<void> | null = null
+  private eventHandlers: Array<(event: TelephonyEvent, subject: string) => void> = []
+
   private async connect(): Promise<void> {
     if (!this.natsUrl) {
       this.logger.warn('NATS_URL not set — event publishing disabled (no-op).')

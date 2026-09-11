@@ -7,6 +7,7 @@ import { Table } from '@/components/ui/Table'
 import { Badge } from '@/components/ui/Badge'
 import { get, ApiError, getToken } from '@/lib/api'
 import { useAuth } from '@/lib/useAuth'
+import { useRealtimeEvents, type LiveEvent } from '@/lib/useRealtime'
 import type {
   CallRecord,
   CallStatus,
@@ -27,6 +28,62 @@ function MetricIcon({ path }: { path: string }) {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
       <path d={path} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  )
+}
+
+/** Human sentence for one live telephony event. */
+function describeEvent(event: LiveEvent): string {
+  switch (event.kind) {
+    case 'call.started':
+      return `Call started — ${event.from ?? '?'} → ${event.to ?? '?'}`
+    case 'call.answered':
+      return `Call answered${event.callId ? ` (${String(event.callId).slice(0, 8)})` : ''}`
+    case 'call.ended':
+      return `Call ended — ${event.durationSec ?? 0}s (${event.status ?? 'done'})`
+    case 'presence.changed':
+      return `Presence changed: ${event.presence ?? 'unknown'}`
+    case 'queue.update':
+      return `Queue update — ${event.waiting ?? 0} waiting, ${event.agentsAvailable ?? 0} agents free`
+    default:
+      return event.kind
+  }
+}
+
+/** Live event feed wired to the API realtime WebSocket gateway. */
+function LiveActivity() {
+  const { events, isConnected } = useRealtimeEvents(8)
+  return (
+    <section aria-label="Live activity" className="flex flex-col gap-2">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-semibold text-text-primary">Live Activity</h2>
+        <span
+          className={`inline-flex items-center gap-1 text-xs ${isConnected ? 'text-success' : 'text-text-muted'}`}
+          role="status"
+        >
+          <span
+            className={`h-2 w-2 rounded-full ${isConnected ? 'bg-success' : 'bg-border'}`}
+            aria-hidden="true"
+          />
+          {isConnected ? 'connected' : 'connecting…'}
+        </span>
+      </div>
+      {events.length === 0 ? (
+        <p className="rounded-md border border-border bg-surface px-4 py-3 text-sm text-text-muted">
+          No live events yet — place a call to see activity appear here.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-1" aria-label="Live telephony events">
+          {events.map((event, i) => (
+            <li
+              key={`${event.kind}-${i}`}
+              className="rounded-md border border-border bg-surface px-4 py-2 text-sm text-text-primary"
+            >
+              {describeEvent(event)}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   )
 }
 
@@ -165,6 +222,8 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-text-primary">Recent Calls</h2>
         {renderTable()}
       </section>
+
+      {!isViewer ? <LiveActivity /> : null}
     </div>
   )
 }

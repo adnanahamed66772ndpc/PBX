@@ -22,6 +22,8 @@ import { EventsModule } from './modules/events/events.module'
 import { CallControlModule } from './modules/call-control/call-control.module'
 import { DashboardModule } from './modules/dashboard/dashboard.module'
 import { ContactsModule } from './modules/contacts/contacts.module'
+import { VoicemailModule } from './modules/voicemail/voicemail.module'
+import { RealtimeModule } from './realtime/realtime.module'
 
 /**
  * Root application module.
@@ -49,6 +51,8 @@ import { ContactsModule } from './modules/contacts/contacts.module'
     CallControlModule,
     DashboardModule,
     ContactsModule,
+    VoicemailModule,
+    RealtimeModule,
   ],
   controllers: [AppController],
   providers: [

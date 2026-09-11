@@ -36,14 +36,98 @@ import { recordStart, recordEnd, handleBridgeEvent } from '../cdr/recorder.js'
 
 const log = createLogger('stasis')
 
+/** The dialplan context app_voicemail lives in (see extensions.conf [pbx-vm]). */
+const VOICEMAIL_CONTEXT = process.env.VOICEMAIL_CONTEXT ?? 'pbx-vm'
+
+/**
+ * Lifecycle of one internal extension dial (caller → destination leg).
+ * `answered` is set by BridgeEnter; on destination termination we either
+ * continue the caller into the voicemail context (no-answer) or tear the
+ * bridge + remaining leg down.
+ */
+interface ExtDial {
+  callerId: string
+  destId: string
+  bridgeId: string
+  ext: string
+  tenantId: number
+  answered: boolean
+  finished: boolean
+}
+
+/** callerId → in-flight ext dial. */
+const extDials = new Map<string, ExtDial>()
+/** destLegId → callerId, so termination events on the dest leg find their dial. */
+const destToCaller = new Map<string, string>()
+
+function finishDial(dial: ExtDial): void {
+  if (dial.finished) return
+  dial.finished = true
+  extDials.delete(dial.callerId)
+  destToCaller.delete(dial.destId)
+}
+
 export function registerStasisHandlers(ari: AriClient): void {
   ari.on('StasisStart', (evt: AriEvent) => onStasisStart(ari, evt))
-  ari.on('StasisEnd', (evt: AriEvent) => onStasisEnd(evt))
+  ari.on('StasisEnd', (evt: AriEvent) => void onChannelGone(ari, evt))
   ari.on('ChannelDestroyed', (evt: AriEvent) => {
     if (evt.channel) void recordEnd(evt.channel.id, 'destroyed')
+    void onChannelGone(ari, evt)
   })
-  ari.on('BridgeEnter', (evt: AriEvent) => void handleBridgeEvent(evt))
+  ari.on('BridgeEnter', (evt: AriEvent) => {
+    void handleBridgeEvent(evt)
+    // A destination leg entering a bridge means the called party answered.
+    const callerId = evt.channel ? destToCaller.get(evt.channel.id) : undefined
+    const dial = callerId ? extDials.get(callerId) : undefined
+    if (dial && evt.channel && evt.channel.id === dial.destId) {
+      dial.answered = true
+      log.info({ callerId: dial.callerId, destId: dial.destId, ext: dial.ext }, 'destination answered')
+    }
+  })
   ari.on('BridgeLeave', (evt: AriEvent) => void handleBridgeEvent(evt))
+}
+
+/**
+ * Shared termination path for StasisEnd and ChannelDestroyed (a channel that
+ * terminates fires both — the first one finishes the dial, the second no-ops):
+ *  - destination leg ended → continue the caller to voicemail if it was never
+ *    answered, otherwise tear the call down;
+ *  - caller leg ended while the destination was still ringing → cancel the
+ *    destination leg (prevents orphan ringing channels).
+ */
+async function onChannelGone(ari: AriClient, evt: AriEvent): Promise<void> {
+  const channelId = evt.channel?.id
+  if (!channelId) return
+
+  // Destination leg terminated.
+  const callerId = destToCaller.get(channelId)
+  if (callerId) {
+    const dial = extDials.get(callerId)
+    if (!dial) return
+    finishDial(dial)
+    await ari.destroyBridge(dial.bridgeId).catch(() => {})
+    if (!dial.answered) {
+      log.info({ callerId, ext: dial.ext, tenantId: dial.tenantId }, 'no-answer → routing caller to voicemail')
+      try {
+        await ari.continueChannel(callerId, VOICEMAIL_CONTEXT, dial.ext)
+      } catch (err) {
+        log.warn({ err, callerId }, 'voicemail continue failed — hanging up caller')
+        await ari.hangup(callerId).catch(() => {})
+      }
+    } else {
+      await ari.hangup(callerId).catch(() => {})
+    }
+    return
+  }
+
+  // Caller leg terminated while the destination leg was still ringing.
+  const dial = extDials.get(channelId)
+  if (dial && !dial.finished) {
+    log.info({ channelId, destId: dial.destId, ext: dial.ext }, 'caller cancelled while ringing — hanging up destination leg')
+    finishDial(dial)
+    await ari.destroyBridge(dial.bridgeId).catch(() => {})
+    await ari.hangup(dial.destId).catch(() => {})
+  }
 }
 
 async function onStasisStart(ari: AriClient, evt: AriEvent): Promise<void> {
@@ -71,14 +155,6 @@ async function onStasisStart(ari: AriClient, evt: AriEvent): Promise<void> {
   // otherwise treat the dialled string as an extension number (ext:…).
   const dest = await resolveDestination(dialled, tenantId)
   await route(ari, channel.id, tenantId, dest, toExt)
-}
-
-async function onStasisEnd(evt: AriEvent): Promise<void> {
-  const channel = evt.channel
-  if (!channel) return
-  log.info({ channelId: channel.id }, 'StasisEnd — cleaning up')
-  await recordEnd(channel.id)
-  // No explicit hangup needed: StasisEnd means Asterisk already left the app.
 }
 
 // ── routing helpers ───────────────────────────────────────────────────
@@ -172,7 +248,21 @@ async function route(ari: AriClient, channelId: string, tenantId: number, destin
         await ari.hangup(channelId).catch(() => {})
         return
       }
+      // Track the dial so termination events can fall back to voicemail or
+      // cancel the ringing leg (see onChannelGone).
+      extDials.set(channelId, {
+        callerId: channelId,
+        destId: destChannel.id,
+        bridgeId: '',
+        ext,
+        tenantId,
+        answered: false,
+        finished: false,
+      })
+      destToCaller.set(destChannel.id, channelId)
+      const dial = extDials.get(channelId)!
       const br = await ari.createBridge('mixing')
+      dial.bridgeId = br.id
       await ari.addChannelsToBridge(br.id, channelId, destChannel.id)
       log.info({ channelId, destId: destChannel.id, bridgeId: br.id, ext }, 'ext bridge created')
       return

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common'
-import { randomBytes } from 'crypto'
+import { createHmac, randomBytes } from 'crypto'
 import { getDb } from '@pbx/db'
 import type { Extension } from '@pbx/db'
 import { Errors, AppError } from '@pbx/common'
@@ -8,6 +8,8 @@ import type { CreateExtensionDto } from './dto/create-extension.dto'
 import type { UpdateExtensionDto } from './dto/update-extension.dto'
 
 const SECRET_BYTES = 16
+/** Lifetime of ephemeral TURN REST credentials, in seconds. */
+const TURN_CREDENTIAL_TTL_SEC = 3600
 
 /**
  * Extension CRUD, always scoped to the current tenant.
@@ -154,8 +156,6 @@ export class ExtensionsService {
     const stunHost = process.env.COTURN_HOST ?? publicHost
     const stunPort = process.env.COTURN_PORT ?? '3478'
     const turnsPort = process.env.TURNS_PORT ?? '5349'
-    const turnUser = process.env.TURN_USER ?? ''
-    const turnPass = process.env.TURN_PASS ?? ''
     const stunServers = [`stun:${stunHost}:${stunPort}`]
     const turnServers: { urls: string[]; credential?: string; username?: string }[] = []
     const turnUrls = [
@@ -163,10 +163,25 @@ export class ExtensionsService {
       `turn:${stunHost}:${stunPort}?transport=tcp`,
       `turns:${stunHost}:${turnsPort}?transport=tcp`,
     ]
-    turnServers.push({
-      urls: turnUrls,
-      ...(turnUser && turnPass ? { username: turnUser, credential: turnPass } : {}),
-    })
+    // Preferred: coturn runs with use-auth-secret + static-auth-secret
+    // (TURN_SECRET) and we mint time-limited REST credentials per request —
+    // username is the unix expiry timestamp, credential is
+    // base64(HMAC-SHA1(secret, username)) per the coturn REST auth spec.
+    const turnSecret = process.env.TURN_SECRET
+    if (turnSecret) {
+      const expiry = Math.floor(Date.now() / 1000) + TURN_CREDENTIAL_TTL_SEC
+      const username = String(expiry)
+      const credential = createHmac('sha1', turnSecret).update(username).digest('base64')
+      turnServers.push({ urls: turnUrls, username, credential })
+    } else {
+      // Fallback: static long-term credentials (TURN_USER / TURN_PASS).
+      const turnUser = process.env.TURN_USER ?? ''
+      const turnPass = process.env.TURN_PASS ?? ''
+      turnServers.push({
+        urls: turnUrls,
+        ...(turnUser && turnPass ? { username: turnUser, credential: turnPass } : {}),
+      })
+    }
     return {
       extension: ext.ext_number,
       secret: ext.secret,
