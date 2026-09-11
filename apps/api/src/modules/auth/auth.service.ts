@@ -174,9 +174,8 @@ export class AuthService {
       throw Errors.notFound('user')
     }
     const email = rows[0].email
-    const label = `${TOTP_ISSUER}:${email}`
-    const otpauthUrl = generateURI({ secret, label, issuer: TOTP_ISSUER })
-    this.logger.log(`2FA setup: new TOTP secret generated for user ${userId} (${label})`)
+    const otpauthUrl = generateURI({ secret, label: email, issuer: TOTP_ISSUER })
+    this.logger.log(`2FA setup: new TOTP secret generated for user ${userId} (${email})`)
     return { secret, otpauthUrl }
   }
 
