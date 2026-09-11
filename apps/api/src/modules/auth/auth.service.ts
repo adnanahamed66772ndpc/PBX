@@ -2,12 +2,18 @@ import { Injectable, Logger } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
 import * as bcrypt from 'bcryptjs'
 import { createHash, randomBytes } from 'crypto'
+import { generateSecret, generateURI, verifySync } from 'otplib'
 import { getDb, tx } from '@pbx/db'
 import type { User } from '@pbx/db'
 import { AppError, Errors } from '@pbx/common'
 import type { JwtPayload, RefreshPayload } from './principal'
 import type { LoginDto } from './dto/login.dto'
 import type { RegisterDto } from './dto/register.dto'
+
+/** App name shown in the TOTP QR code (otpauth:// URI). */
+const TOTP_ISSUER = 'PBX Platform'
+/** TOTP time tolerance in seconds (±30s = 1 time-step window for clock drift). */
+const TOTP_TOLERANCE = 30
 
 /**
  * Shape returned by login/register/refresh: an access JWT plus the opaque-ish
@@ -43,7 +49,8 @@ type UserWithHash = User & { password_hash: string }
 
 /**
  * Authentication core: credential verification, JWT issuance, refresh-token
- * rotation (hashed at rest), TOTP stub, and self-service tenant provisioning.
+ * rotation (hashed at rest), RFC-6238 TOTP 2FA, and self-service tenant
+ * provisioning.
  *
  * Refresh tokens are stored as a SHA-256 hash in the `refresh_tokens` table so
  * a database leak does not immediately grant access; rotation revokes the
@@ -146,9 +153,37 @@ export class AuthService {
   }
 
   /**
-   * TOTP verification stub. The real implementation will derive the expected
-   * 6-digit code from the user's totp_secret using RFC 6238. Here we accept any
-   * well-formed 6-digit string when a secret is configured, and reject otherwise.
+   * Set up TOTP 2FA for the current user. Generates a new base32 secret,
+   * stores it in the user's `totp_secret` column, and returns the secret
+   * plus an `otpauth://` URI that the browser renders as a QR code.
+   *
+   * The user must then verify a live code via `verifyTwoFactor` to confirm
+   * the enrolment. Calling setup again rotates the secret.
+   */
+  async setupTwoFactor(userId: number): Promise<{
+    secret: string
+    otpauthUrl: string
+  }> {
+    const secret = generateSecret()
+    const db = getDb()
+    const { rows } = await db.query<{ email: string }>(
+      'UPDATE users SET totp_secret = $1, updated_at = now() WHERE id = $2 AND active = true RETURNING email',
+      [secret, userId],
+    )
+    if (rows.length === 0) {
+      throw Errors.notFound('user')
+    }
+    const email = rows[0].email
+    const label = `${TOTP_ISSUER}:${email}`
+    const otpauthUrl = generateURI({ secret, label, issuer: TOTP_ISSUER })
+    this.logger.log(`2FA setup: new TOTP secret generated for user ${userId} (${label})`)
+    return { secret, otpauthUrl }
+  }
+
+  /**
+   * Verify a TOTP code against the user's stored secret using RFC 6238.
+   * A ±1 time-step window absorbs minor clock drift between the authenticator
+   * app and the server.
    */
   async verifyTwoFactor(userId: number, code: string): Promise<{ verified: boolean }> {
     const db = getDb()
@@ -160,10 +195,25 @@ export class AuthService {
     if (!user || !user.totp_secret) {
       throw new AppError('two_factor_not_configured', '2FA is not enabled for this account', 409)
     }
-    // STUB: accept any 6-digit code. Replace with real TOTP derivation.
-    const verified = /^\d{6}$/.test(code)
-    this.logger.warn(`TOTP verification is a STUB — accepting any 6-digit code for user ${userId}`)
-    return { verified }
+    const result = verifySync({ secret: user.totp_secret, token: code, epochTolerance: TOTP_TOLERANCE })
+    return { verified: result.valid }
+  }
+
+  /**
+   * Disable 2FA by clearing the stored TOTP secret. The user must re-enrol
+   * via `setupTwoFactor` to turn it back on.
+   */
+  async disableTwoFactor(userId: number): Promise<{ disabled: true }> {
+    const db = getDb()
+    const { rowCount } = await db.query(
+      'UPDATE users SET totp_secret = NULL, updated_at = now() WHERE id = $1 AND active = true AND totp_secret IS NOT NULL',
+      [userId],
+    )
+    if (rowCount === 0) {
+      throw new AppError('two_factor_not_configured', '2FA is not enabled for this account', 409)
+    }
+    this.logger.log(`2FA disabled for user ${userId}`)
+    return { disabled: true }
   }
 
   /** Returns the authenticated user's public profile. */

@@ -115,6 +115,61 @@ export class ExtensionsService {
       throw Errors.notFound('extension')
     }
   }
+
+  /**
+   * Return the SIP/WebRTC connection parameters for the currently
+   * authenticated user's primary extension. The browser softphone (JSSIP)
+   * uses this to register against Asterisk PJSIP via WSS.
+   *
+   * Public host and WSS port come from env vars (PUBLIC_HOST, PJSIP_WSS_PORT).
+   * STUN/TURN servers come from env (COTURN_HOST / COTURN_PORT / TURNS_PORT);
+   * when unset, sensible defaults matching the deployment are used.
+   */
+  async getMySipConfig(tenantId: number, userId: number): Promise<{
+    extension: string
+    secret: string
+    domain: string
+    wssUrl: string
+    stunServers: string[]
+    turnServers: { urls: string[]; credential?: string; username?: string }[]
+  }> {
+    const db = getDb()
+    const { rows } = await db.query<{ ext_number: string; secret: string }>(
+      'SELECT ext_number, secret FROM extensions WHERE tenant_id = $1 AND user_id = $2 ORDER BY id LIMIT 1',
+      [tenantId, userId],
+    )
+    if (rows.length === 0) {
+      throw Errors.notFound('extension')
+    }
+    const ext = rows[0]
+    const publicHost = process.env.PUBLIC_HOST ?? process.env.SIP_DOMAIN ?? 'localhost'
+    const wssPort = process.env.PJSIP_WSS_PORT ?? '8089'
+    const wssUrl = `wss://${publicHost}:${wssPort}/ws`
+    const stunHost = process.env.COTURN_HOST ?? publicHost
+    const stunPort = process.env.COTURN_PORT ?? '3478'
+    const turnsPort = process.env.TURNS_PORT ?? '5349'
+    const turnUser = process.env.TURN_USER ?? ''
+    const turnPass = process.env.TURN_PASS ?? ''
+    const stunServers = [`stun:${stunHost}:${stunPort}`]
+    const turnServers: { urls: string[]; credential?: string; username?: string }[] = []
+    const turnUrls = [
+      `turn:${stunHost}:${stunPort}?transport=udp`,
+      `turn:${stunHost}:${stunPort}?transport=tcp`,
+      `turns:${stunHost}:${turnsPort}?transport=tcp`,
+    ]
+    turnServers.push({
+      urls: turnUrls,
+      ...(turnUser && turnPass ? { username: turnUser, credential: turnPass } : {}),
+    })
+    return {
+      extension: ext.ext_number,
+      secret: ext.secret,
+      domain: publicHost,
+      wssUrl,
+      stunServers,
+      turnServers,
+    }
+  }
 }
 
 /** Detect a Postgres unique_violation (SQLSTATE 23505) from a raw error. */

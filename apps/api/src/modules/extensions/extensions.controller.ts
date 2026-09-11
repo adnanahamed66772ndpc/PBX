@@ -32,6 +32,15 @@ export class ExtensionsController {
     return this.extensionsService.list(user.tenantId)
   }
 
+  @Get('my-sip-config')
+  @Roles('owner', 'admin', 'manager', 'agent')
+  @ApiOperation({ summary: 'Get SIP/WebRTC connection config for the current user (WSS, TURN, credentials)' })
+  @ApiResponse({ status: 200, description: 'SIP/WebRTC connection parameters for the softphone dialer.' })
+  @ApiResponse({ status: 404, description: 'No SIP extension assigned to this user.' })
+  async getMySipConfig(@CurrentUser() user: AuthenticatedUser) {
+    return this.extensionsService.getMySipConfig(user.tenantId, user.id)
+  }
+
   @Get(':id')
   @Roles('owner', 'admin', 'manager', 'agent')
   @ApiOperation({ summary: 'Get an extension by id' })

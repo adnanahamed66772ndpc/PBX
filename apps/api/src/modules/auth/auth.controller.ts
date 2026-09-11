@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Post } from '@nestjs/common'
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger'
 import { AuthService, type AuthTokenPair, type SafeUser } from './auth.service'
 import { LoginDto } from './dto/login.dto'
@@ -12,8 +12,9 @@ import type { AuthenticatedUser } from '../../common/tenancy/tenant-context'
  * Authentication endpoints.
  *
  * register/login/refresh are @Public() so the global JwtAuthGuard lets them
- * through without a token. 2fa/verify and me are protected by the global
- * JwtAuthGuard (no @Public), so request.user is populated for @CurrentUser().
+ * through without a token. 2fa/setup, 2fa/verify, 2fa, and me are protected
+ * by the global JwtAuthGuard (no @Public), so request.user is populated for
+ * @CurrentUser().
  */
 @ApiTags('auth')
 @Controller('auth')
@@ -46,15 +47,36 @@ export class AuthController {
     return this.authService.refresh(refreshToken)
   }
 
+  @Post('2fa/setup')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Generate a new TOTP secret and return an otpauth:// URI for QR enrolment' })
+  @ApiResponse({ status: 201, description: 'Secret + otpauth URI for QR code rendering.' })
+  setupTwoFactor(@CurrentUser() user: AuthenticatedUser): Promise<{
+    secret: string
+    otpauthUrl: string
+  }> {
+    return this.authService.setupTwoFactor(user.id)
+  }
+
   @Post('2fa/verify')
   @ApiBearerAuth('access-token')
-  @ApiOperation({ summary: 'Verify a TOTP code (stub implementation)' })
+  @ApiOperation({ summary: 'Verify a 6-digit TOTP code (RFC 6238)' })
   @ApiResponse({ status: 200, description: '2FA verification result.' })
+  @ApiResponse({ status: 409, description: '2FA not configured for this account.' })
   verifyTwoFactor(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: TwoFactorDto,
   ): Promise<{ verified: boolean }> {
     return this.authService.verifyTwoFactor(user.id, dto.code)
+  }
+
+  @Delete('2fa')
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Disable 2FA — clears the stored TOTP secret' })
+  @ApiResponse({ status: 200, description: '2FA disabled.' })
+  @ApiResponse({ status: 409, description: '2FA not configured for this account.' })
+  disableTwoFactor(@CurrentUser() user: AuthenticatedUser): Promise<{ disabled: true }> {
+    return this.authService.disableTwoFactor(user.id)
   }
 
   @Get('me')

@@ -13,6 +13,7 @@
   "dependencies": {
     "@pbx/common": "workspace:*",
     "@pbx/db": "workspace:*",
+    "jssip": "^3.13.8",
     "next": "^14.2.5",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

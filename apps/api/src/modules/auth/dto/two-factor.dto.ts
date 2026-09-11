@@ -4,9 +4,8 @@ import { ApiProperty } from '@nestjs/swagger'
 /**
  * POST /auth/2fa/verify — time-based one-time password submission.
  *
- * The backend's TOTP verification is currently a stub (simple 6-digit check);
- * the real implementation will validate against the user's totp_secret using
- * an RFC 6238 TOTP library.
+ * The backend validates the 6-digit code against the user's `totp_secret`
+ * using RFC 6238 TOTP (otplib) with a ±1 time-step window for clock drift.
  */
 export class TwoFactorDto {
   @ApiProperty({ example: '123456', description: '6-digit TOTP code' })
