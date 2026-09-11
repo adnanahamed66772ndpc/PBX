@@ -136,14 +136,17 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     } catch {
       return
     }
+    let sent = 0
     for (const client of this.clients) {
       // Platform view (superadmin, tenant null) sees everything.
       if (client.tenantId !== null && client.tenantId !== event.tenantId) continue
       try {
         client.ws.send(payload)
+        sent++
       } catch {
         this.clients.delete(client)
       }
     }
+    this.logger.log(`broadcast ${event.kind} tenant=${event.tenantId} → ${sent}/${this.clients.size} clients`)
   }
 }

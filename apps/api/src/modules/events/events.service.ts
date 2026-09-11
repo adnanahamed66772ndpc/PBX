@@ -106,11 +106,15 @@ export class EventsService implements OnModuleInit, OnModuleDestroy {
         const decoder = new TextDecoder()
         nc.subscribe('pbx.*.*.*', {
           callback: (err, msg) => {
-            if (err || !msg) return
+            if (err || !msg) {
+              this.logger.warn(`NATS callback error on ${msg?.subject ?? 'unknown'}`)
+              return
+            }
             try {
               const evt = JSON.parse(decoder.decode(msg.data)) as TelephonyEvent
+              this.logger.log(`NATS event received: ${evt.kind} tenant=${(evt as { tenantId?: number }).tenantId}`)
               for (const handler of this.eventHandlers) handler(evt, msg.subject)
-            } catch {
+            } catch (err2) {
               this.logger.warn(`Unparseable NATS message on ${msg.subject}`)
             }
           },
