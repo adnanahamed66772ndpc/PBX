@@ -51,6 +51,12 @@ async function onStasisStart(ari: AriClient, evt: AriEvent): Promise<void> {
   if (!channel) return
   const args = evt.args ?? []
   const dialled = args[0] ?? channel.dialplan.exten ?? ''
+  // If this channel was originated by us (outgoing leg of a bridge), it has
+  // the 'dialed:NNN' arg — don't re-route, just wait to enter the bridge.
+  if (dialled.startsWith('dialed:')) {
+    log.info({ channelId: channel.id, dialled }, 'StasisStart — outgoing leg, waiting for bridge')
+    return
+  }
   // tenantId may be passed by apps/api originate; default to bootstrap tenant.
   const tenantId = args[1] ? parseInt(args[1], 10) : await resolveTenant(dialled) ?? 1
   const fromExt = channel.caller?.number ?? null
@@ -148,9 +154,27 @@ async function route(ari: AriClient, channelId: string, tenantId: number, destin
   switch (kind) {
     case 'ext': {
       const ext = rest ?? toExt
-      // Answer first so the bridge media flows, then continue in dialplan.
+      // Answer the incoming channel, then originate the destination endpoint
+      // and bridge both legs. We pass appArgs=['dialed:NNN'] so the outgoing
+      // leg's StasisStart handler knows it's the called side (no re-routing).
       await ari.answer(channelId).catch(() => {})
-      await ari.continueChannel(channelId, 'from-internal', ext, 1)
+      let destChannel: { id: string; name: string } | null = null
+      try {
+        destChannel = await ari.originate({
+          endpoint: `PJSIP/${ext}`,
+          app: 'pbx',
+          appArgs: [`dialed:${ext}`, String(tenantId)],
+          callerId: `Extension ${ext}`,
+          timeout: 30,
+        })
+      } catch (err) {
+        log.warn({ err, ext }, 'originate to extension failed — hanging up')
+        await ari.hangup(channelId).catch(() => {})
+        return
+      }
+      const br = await ari.createBridge('mixing')
+      await ari.addChannelsToBridge(br.id, channelId, destChannel.id)
+      log.info({ channelId, destId: destChannel.id, bridgeId: br.id, ext }, 'ext bridge created')
       return
     }
     case 'ivr': {

@@ -77,7 +77,8 @@ export type AriEventType =
 
 export interface OriginateParams {
   endpoint: string
-  extension: string
+  /** Dialplan extension to continue to (required when not using app/appArgs). */
+  extension?: string
   context?: string
   priority?: number
   label?: string | null
