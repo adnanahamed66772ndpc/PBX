@@ -135,10 +135,21 @@ async function onStasisStart(ari: AriClient, evt: AriEvent): Promise<void> {
   if (!channel) return
   const args = evt.args ?? []
   const dialled = args[0] ?? channel.dialplan.exten ?? ''
-  // If this channel was originated by us (outgoing leg of a bridge), it has
-  // the 'dialed:NNN' arg — don't re-route, just wait to enter the bridge.
+  // If this channel was originated by us as a destination leg, it has the
+  // 'dialed:NNN' arg — don't re-route, just wait to enter the bridge.
   if (dialled.startsWith('dialed:')) {
     log.info({ channelId: channel.id, dialled }, 'StasisStart — outgoing leg, waiting for bridge')
+    return
+  }
+  // Click-to-call caller leg: the HTTP originate path creates it with
+  // 'dial:<to>' — this channel is the caller; route to the target now.
+  if (dialled.startsWith('dial:')) {
+    const target = dialled.slice(5)
+    const tenantId = args[1] ? parseInt(args[1], 10) : 1
+    const fromExt = channel.caller?.number ?? null
+    log.info({ channelId: channel.id, target, tenantId, from: fromExt }, 'StasisStart — click-to-call caller leg')
+    await recordStart(evt, tenantId, 'internal', fromExt, target, null)
+    await route(ari, channel.id, tenantId, `ext:${target}`, target)
     return
   }
   // tenantId may be passed by apps/api originate; default to bootstrap tenant.

@@ -39,6 +39,16 @@ function required(name: string, value: string): string {
 }
 
 async function main(): Promise<void> {
+  // A rejected event-handler promise must never take the service down:
+  // log it and keep serving calls. (Node kills the process on unhandled
+  // rejections by default.)
+  process.on('unhandledRejection', (reason) => {
+    log.error({ err: reason }, 'unhandled rejection — continuing')
+  })
+  process.on('uncaughtException', (err) => {
+    log.error({ err }, 'uncaught exception — continuing')
+  })
+
   required('ARI_URL', ARI_URL)
   required('ARI_USER', ARI_USER)
   required('ARI_PASSWORD', ARI_PASSWORD)

@@ -46,11 +46,11 @@ export function startHttpServer(ari: AriClient): Server {
         }
         if (req.method === 'POST' && req.url === '/originate') {
           const body = await readJson<OriginateBody>(req)
-          return handleOriginate(ari, res, body)
+          return await handleOriginate(ari, res, body)
         }
         if (req.method === 'POST' && req.url === '/hangup') {
           const body = await readJson<HangupBody>(req)
-          return handleHangup(ari, res, body)
+          return await handleHangup(ari, res, body)
         }
         throw Errors.notFound(`route ${req.method} ${req.url}`)
       } catch (err) {
@@ -73,22 +73,29 @@ export function startHttpServer(ari: AriClient): Server {
 
 async function handleOriginate(ari: AriClient, res: ServerResponse, body: OriginateBody): Promise<void> {
   if (!body.to) throw Errors.validation('to is required')
-  const fromExt = body.fromExt ?? 'anonymous'
-  const endpoint = `PJSIP/${body.to}`
+  if (!body.fromExt) throw Errors.validation('fromExt is required')
+  // Click-to-call: ring the caller's own endpoint first; when it enters
+  // Stasis with the `dial:<to>` arg, the stasis handler routes the call to
+  // the destination (extension → bridge, no-answer → voicemail).
   const result = await ari.originate({
-    endpoint,
-    extension: body.to,
-    context: body.context ?? 'from-internal',
+    endpoint: `PJSIP/${body.fromExt}`,
     app: 'pbx',
-    appArgs: ['outbound', String(body.tenantId ?? 1)],
-    callerId: fromExt,
+    appArgs: [`dial:${body.to}`, String(body.tenantId ?? 1)],
+    callerId: `Extension ${body.fromExt}`,
+    timeout: 60,
   })
   sendJson(res, 201, { channelId: result.id, name: result.name })
 }
 
 async function handleHangup(ari: AriClient, res: ServerResponse, body: HangupBody): Promise<void> {
   if (!body.channelId) throw Errors.validation('channelId is required')
-  await ari.hangup(body.channelId)
+  try {
+    await ari.hangup(body.channelId)
+  } catch (err) {
+    // A channel that already terminated is a successful hangup.
+    const status = (err as { status?: number }).status
+    if (status !== 404) throw err
+  }
   sendJson(res, 200, { ok: true })
 }
 
