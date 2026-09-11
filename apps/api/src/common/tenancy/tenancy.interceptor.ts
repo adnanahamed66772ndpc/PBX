@@ -28,7 +28,7 @@ export class TenancyInterceptor implements NestInterceptor {
 
   intercept(_context: ExecutionContext, next: CallHandler): Observable<unknown> {
     const user = this.request.user as AuthenticatedUser | undefined
-    if (user && typeof user.tenantId === 'number') {
+    if (user) {
       this.tenantContext.setUser({
         id: user.id,
         tenantId: user.tenantId,

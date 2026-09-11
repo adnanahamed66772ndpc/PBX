@@ -28,9 +28,9 @@ export default function RootLayout({
       </head>
       <body>
         <div className="min-h-screen">
-          <Sidebar presence="available" userName="Agent" tenantName="Acme PBX" />
+          <Sidebar />
           <div className="flex min-h-screen flex-col md:pl-64">
-            <Topbar tenantName="Acme PBX" userName="Agent" />
+            <Topbar tenantName="" userName="" />
             <main className="flex-1 px-4 py-6 md:px-6">{children}</main>
           </div>
         </div>

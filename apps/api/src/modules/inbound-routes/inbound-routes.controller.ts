@@ -29,14 +29,14 @@ export class InboundRoutesController {
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'List inbound routes in the current tenant' })
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.inboundRoutesService.list(user.tenantId)
+    return this.inboundRoutesService.list(user.tenantId!)
   }
 
   @Get(':id')
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'Get an inbound route by id' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.inboundRoutesService.getById(user.tenantId, id)
+    return this.inboundRoutesService.getById(user.tenantId!, id)
   }
 
   @Post()
@@ -44,7 +44,7 @@ export class InboundRoutesController {
   @ApiOperation({ summary: 'Create an inbound route' })
   @ApiResponse({ status: 201, description: 'Inbound route created.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateInboundRouteDto) {
-    return this.inboundRoutesService.create(user.tenantId, dto)
+    return this.inboundRoutesService.create(user.tenantId!, dto)
   }
 
   @Patch(':id')
@@ -55,7 +55,7 @@ export class InboundRoutesController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateInboundRouteDto,
   ) {
-    return this.inboundRoutesService.update(user.tenantId, id, dto)
+    return this.inboundRoutesService.update(user.tenantId!, id, dto)
   }
 
   @Delete(':id')
@@ -66,7 +66,7 @@ export class InboundRoutesController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.inboundRoutesService.remove(user.tenantId, id)
+    await this.inboundRoutesService.remove(user.tenantId!, id)
     return { id, deleted: true }
   }
 }

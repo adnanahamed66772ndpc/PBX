@@ -45,7 +45,7 @@ export interface AuthLoginRequest {
 
 export interface SafeUser {
   id: number
-  tenantId: number
+  tenantId: number | null
   email: string
   fullName: string | null
   role: Role
@@ -86,11 +86,11 @@ export interface DashboardSummary {
 
 export interface Contact {
   id: number
-  fullName: string
+  full_name: string
   email?: string | null
-  extension: string
   phone: string
-  department: string
+  extension?: string | null
+  department?: string | null
 }
 
 export interface Voicemail {

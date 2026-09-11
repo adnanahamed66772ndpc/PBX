@@ -7,7 +7,7 @@ import type { Role } from '@pbx/db'
  */
 export interface AuthenticatedUser {
   id: number
-  tenantId: number
+  tenantId: number | null
   role: Role
   email: string
 }
@@ -38,8 +38,8 @@ export class TenantContext {
     return this.currentUser
   }
 
-  /** Convenience accessor for the tenant id. */
-  get tenantId(): number {
+  /** Convenience accessor for the tenant id (null for unswitched superadmin). */
+  get tenantId(): number | null {
     return this.getRequestContext().tenantId
   }
 

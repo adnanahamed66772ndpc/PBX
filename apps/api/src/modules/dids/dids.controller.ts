@@ -30,14 +30,14 @@ export class DidsController {
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'List DID numbers in the current tenant' })
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.didsService.list(user.tenantId)
+    return this.didsService.list(user.tenantId!)
   }
 
   @Get(':id')
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'Get a DID by id' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.didsService.getById(user.tenantId, id)
+    return this.didsService.getById(user.tenantId!, id)
   }
 
   @Post()
@@ -45,7 +45,7 @@ export class DidsController {
   @ApiOperation({ summary: 'Claim a DID number' })
   @ApiResponse({ status: 201, description: 'DID created.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateDidDto) {
-    return this.didsService.create(user.tenantId, dto)
+    return this.didsService.create(user.tenantId!, dto)
   }
 
   @Patch(':id')
@@ -56,7 +56,7 @@ export class DidsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateDidDto,
   ) {
-    return this.didsService.update(user.tenantId, id, dto)
+    return this.didsService.update(user.tenantId!, id, dto)
   }
 
   @Put(':id/assign')
@@ -68,7 +68,7 @@ export class DidsController {
     @Param('id', ParseIntPipe) id: number,
     @Body('inbound_route_id') inboundRouteId: number | null,
   ) {
-    return this.didsService.update(user.tenantId, id, { inbound_route_id: inboundRouteId ?? null })
+    return this.didsService.update(user.tenantId!, id, { inbound_route_id: inboundRouteId ?? null })
   }
 
   @Delete(':id')
@@ -79,7 +79,7 @@ export class DidsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.didsService.remove(user.tenantId, id)
+    await this.didsService.remove(user.tenantId!, id)
     return { id, deleted: true }
   }
 }

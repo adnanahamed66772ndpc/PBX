@@ -29,14 +29,14 @@ export class IvrsController {
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'List IVRs in the current tenant' })
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.ivrsService.list(user.tenantId)
+    return this.ivrsService.list(user.tenantId!)
   }
 
   @Get(':id')
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'Get an IVR by id' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.ivrsService.getById(user.tenantId, id)
+    return this.ivrsService.getById(user.tenantId!, id)
   }
 
   @Post()
@@ -44,7 +44,7 @@ export class IvrsController {
   @ApiOperation({ summary: 'Create an IVR menu (menu stored as JSONB)' })
   @ApiResponse({ status: 201, description: 'IVR created.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateIvrDto) {
-    return this.ivrsService.create(user.tenantId, dto)
+    return this.ivrsService.create(user.tenantId!, dto)
   }
 
   @Patch(':id')
@@ -55,7 +55,7 @@ export class IvrsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateIvrDto,
   ) {
-    return this.ivrsService.update(user.tenantId, id, dto)
+    return this.ivrsService.update(user.tenantId!, id, dto)
   }
 
   @Delete(':id')
@@ -66,7 +66,7 @@ export class IvrsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.ivrsService.remove(user.tenantId, id)
+    await this.ivrsService.remove(user.tenantId!, id)
     return { id, deleted: true }
   }
 }

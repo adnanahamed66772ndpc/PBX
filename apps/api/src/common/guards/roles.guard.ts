@@ -27,6 +27,10 @@ export class RolesGuard implements CanActivate {
     if (!user || !user.role) {
       throw Errors.unauthorized()
     }
+    // superadmin bypasses all role checks — full platform + tenant access.
+    if (user.role === 'superadmin') {
+      return true
+    }
     if (!requiredRoles.includes(user.role)) {
       throw Errors.forbidden()
     }

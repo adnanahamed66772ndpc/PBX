@@ -36,9 +36,14 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
     if (!user || !user.active) {
       throw new UnauthorizedException('account inactive or not found')
     }
+    // For superadmin, the JWT payload's tenantId is authoritative — it may be
+    // null (platform-level, not switched) or a target tenant id (after switch).
+    // For all other roles, the DB's tenant_id is authoritative (more secure:
+    // the token can't override the real tenant scope).
+    const tenantId = user.role === 'superadmin' ? payload.tenantId : user.tenant_id
     return {
       id: user.id,
-      tenantId: user.tenant_id,
+      tenantId,
       role: user.role,
       email: user.email,
     }

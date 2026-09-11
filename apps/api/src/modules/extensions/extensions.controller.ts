@@ -29,7 +29,7 @@ export class ExtensionsController {
   @Roles('owner', 'admin', 'manager', 'agent')
   @ApiOperation({ summary: 'List extensions in the current tenant' })
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.extensionsService.list(user.tenantId)
+    return this.extensionsService.list(user.tenantId!)
   }
 
   @Get('my-sip-config')
@@ -38,14 +38,14 @@ export class ExtensionsController {
   @ApiResponse({ status: 200, description: 'SIP/WebRTC connection parameters for the softphone dialer.' })
   @ApiResponse({ status: 404, description: 'No SIP extension assigned to this user.' })
   async getMySipConfig(@CurrentUser() user: AuthenticatedUser) {
-    return this.extensionsService.getMySipConfig(user.tenantId, user.id)
+    return this.extensionsService.getMySipConfig(user.tenantId!, user.id)
   }
 
   @Get(':id')
   @Roles('owner', 'admin', 'manager', 'agent')
   @ApiOperation({ summary: 'Get an extension by id' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.extensionsService.getById(user.tenantId, id)
+    return this.extensionsService.getById(user.tenantId!, id)
   }
 
   @Post()
@@ -53,7 +53,7 @@ export class ExtensionsController {
   @ApiOperation({ summary: 'Provision a new SIP extension (generates a secret)' })
   @ApiResponse({ status: 201, description: 'Extension created with generated secret.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateExtensionDto) {
-    return this.extensionsService.create(user.tenantId, dto)
+    return this.extensionsService.create(user.tenantId!, dto)
   }
 
   @Patch(':id')
@@ -64,7 +64,7 @@ export class ExtensionsController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateExtensionDto,
   ) {
-    return this.extensionsService.update(user.tenantId, id, dto)
+    return this.extensionsService.update(user.tenantId!, id, dto)
   }
 
   @Delete(':id')
@@ -75,7 +75,7 @@ export class ExtensionsController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.extensionsService.remove(user.tenantId, id)
+    await this.extensionsService.remove(user.tenantId!, id)
     return { id, deleted: true }
   }
 }

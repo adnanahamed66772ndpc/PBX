@@ -3,7 +3,7 @@
  * These mirror the SQL schema in packages/db/migrations.
  */
 
-export type Role = 'owner' | 'admin' | 'manager' | 'agent' | 'user'
+export type Role = 'superadmin' | 'owner' | 'admin' | 'manager' | 'agent' | 'user' | 'viewer'
 export type Presence = 'available' | 'away' | 'dnd' | 'offline'
 export type CallDirection = 'in' | 'out' | 'internal'
 export type CallStatus = 'answered' | 'noanswer' | 'busy' | 'failed'
@@ -20,7 +20,7 @@ export interface Tenant {
 
 export interface User {
   id: number
-  tenant_id: number
+  tenant_id: number | null
   email: string
   full_name?: string | null
   role: Role
@@ -114,4 +114,16 @@ export interface CallRecord {
   billsec: number
   disposition?: string | null
   recording_url?: string | null
+}
+
+export interface Contact {
+  id: number
+  tenant_id: number
+  full_name: string
+  email?: string | null
+  phone: string
+  extension?: string | null
+  department?: string | null
+  created_at: string
+  updated_at: string
 }

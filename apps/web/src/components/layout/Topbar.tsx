@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useRef, useEffect, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { ThemeToggle } from './ThemeToggle'
+import { useAuth } from '@/lib/useAuth'
 
 export interface TopbarProps {
   tenantName?: string
@@ -13,6 +15,8 @@ export interface TopbarProps {
 function UserMenu({ userName }: { userName: string }) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const router = useRouter()
+  const { logout } = useAuth()
 
   useEffect(() => {
     function onDown(e: MouseEvent) {
@@ -28,6 +32,11 @@ function UserMenu({ userName }: { userName: string }) {
       document.removeEventListener('keydown', onKey)
     }
   }, [])
+
+  function signOut() {
+    logout()
+    router.push('/login')
+  }
 
   return (
     <div className="relative" ref={ref}>
@@ -57,9 +66,8 @@ function UserMenu({ userName }: { userName: string }) {
           className="absolute right-0 mt-2 w-48 rounded-md border border-border bg-surface py-1 shadow-lg"
         >
           <a href="/settings" role="menuitem" className="block px-3 py-2 text-sm text-text-primary hover:bg-surface-hover">Settings</a>
-          <a href="/profile" role="menuitem" className="block px-3 py-2 text-sm text-text-primary hover:bg-surface-hover">Profile</a>
           <hr className="border-border" />
-          <a href="/login" role="menuitem" className="block px-3 py-2 text-sm text-danger hover:bg-surface-hover">Sign out</a>
+          <button type="button" role="menuitem" onClick={signOut} className="block w-full px-3 py-2 text-left text-sm text-danger hover:bg-surface-hover">Sign out</button>
         </div>
       ) : null}
     </div>
@@ -67,11 +75,14 @@ function UserMenu({ userName }: { userName: string }) {
 }
 
 export function Topbar({
-  tenantName = 'PBX Tenant',
-  userName = 'Agent',
+  tenantName: tenantNameProp,
+  userName: userNameProp,
   onSearch,
   actions,
-}: TopbarProps) {
+}: TopbarProps = {}) {
+  const { user } = useAuth()
+  const userName = userNameProp ?? user?.fullName ?? user?.email ?? 'User'
+  const tenantName = tenantNameProp ?? (user?.role === 'superadmin' ? 'Platform' : 'PBX')
   return (
     <header className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b border-border bg-surface/95 px-4 pl-16 backdrop-blur md:pl-4">
       <div className="hidden items-center gap-2 md:flex">

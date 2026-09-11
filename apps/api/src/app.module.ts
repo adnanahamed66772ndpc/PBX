@@ -20,6 +20,8 @@ import { IvrsModule } from './modules/ivrs/ivrs.module'
 import { CdrModule } from './modules/cdr/cdr.module'
 import { EventsModule } from './modules/events/events.module'
 import { CallControlModule } from './modules/call-control/call-control.module'
+import { DashboardModule } from './modules/dashboard/dashboard.module'
+import { ContactsModule } from './modules/contacts/contacts.module'
 
 /**
  * Root application module.
@@ -45,6 +47,8 @@ import { CallControlModule } from './modules/call-control/call-control.module'
     CdrModule,
     EventsModule,
     CallControlModule,
+    DashboardModule,
+    ContactsModule,
   ],
   controllers: [AppController],
   providers: [

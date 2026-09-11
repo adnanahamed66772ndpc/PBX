@@ -24,7 +24,7 @@ export class CallControlController {
   @ApiResponse({ status: 201, description: 'Call originated; returns the ARI channel id.' })
   @ApiResponse({ status: 501, description: 'Telephony backend not configured.' })
   originate(@CurrentUser() user: AuthenticatedUser, @Body() dto: OriginateCallDto): Promise<{ callId: string }> {
-    return this.callControl.originate(user.tenantId, dto.fromExt, dto.to)
+    return this.callControl.originate(user.tenantId!, dto.fromExt, dto.to)
   }
 
   @Delete(':channelId')

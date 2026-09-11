@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Table } from '@/components/ui/Table'
 import { Modal } from '@/components/ui/Modal'
-import { get, post, ApiError } from '@/lib/api'
+import { get, post, ApiError, getToken } from '@/lib/api'
 import type { Contact } from '@/lib/types'
 
 export default function ContactsPage() {
@@ -14,7 +14,7 @@ export default function ContactsPage() {
   const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [addOpen, setAddOpen] = useState(false)
-  const [draft, setDraft] = useState<Omit<Contact, 'id'>>({
+  const [draft, setDraft] = useState({
     fullName: '',
     email: '',
     extension: '',
@@ -38,6 +38,7 @@ export default function ContactsPage() {
   }
 
   useEffect(() => {
+    if (!getToken()) return
     load()
   }, [])
 
@@ -45,7 +46,7 @@ export default function ContactsPage() {
     const q = query.trim().toLowerCase()
     if (!q) return contacts
     return contacts.filter((c) =>
-      [c.fullName, c.extension, c.phone, c.department, c.email ?? '']
+      [c.full_name, c.extension ?? '', c.phone, c.department ?? '', c.email ?? '']
         .join(' ')
         .toLowerCase()
         .includes(q),
@@ -54,14 +55,20 @@ export default function ContactsPage() {
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault()
-    if (!draft.fullName || !draft.extension) {
-      setFormError('Name and extension are required.')
+    if (!draft.fullName || !draft.phone) {
+      setFormError('Name and phone are required.')
       return
     }
     setSaving(true)
     setFormError(null)
     try {
-      const created = await post<Contact>('/contacts', draft)
+      const created = await post<Contact>('/contacts', {
+        fullName: draft.fullName,
+        email: draft.email || undefined,
+        extension: draft.extension || undefined,
+        phone: draft.phone,
+        department: draft.department || undefined,
+      })
       setContacts((prev) => [...prev, created])
       setAddOpen(false)
       setDraft({ fullName: '', email: '', extension: '', phone: '', department: '' })
@@ -101,11 +108,11 @@ export default function ContactsPage() {
         rowKey={(c) => c.id}
         emptyMessage={loading ? 'Loading contacts…' : 'No contacts found.'}
         columns={[
-          { key: 'fullName', header: 'Name' },
-          { key: 'extension', header: 'Extension' },
+          { key: 'full_name', header: 'Name' },
+          { key: 'extension', header: 'Extension', render: (c) => c.extension ?? '—' },
           { key: 'phone', header: 'Phone', render: (c) => c.phone || '—' },
-          { key: 'department', header: 'Department', render: (c) => c.department || '—' },
-          { key: 'email', header: 'Email', render: (c) => c.email || '—' },
+          { key: 'department', header: 'Department', render: (c) => c.department ?? '—' },
+          { key: 'email', header: 'Email', render: (c) => c.email ?? '—' },
         ]}
       />
 
@@ -123,10 +130,10 @@ export default function ContactsPage() {
       >
         <form id="add-contact-form" onSubmit={onCreate} className="flex flex-col gap-3">
           <Input label="Full name" value={draft.fullName} onChange={(e) => setDraft({ ...draft, fullName: e.target.value })} required />
-          <Input label="Extension" value={draft.extension} onChange={(e) => setDraft({ ...draft, extension: e.target.value })} required />
-          <Input label="Phone" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} />
+          <Input label="Phone" value={draft.phone} onChange={(e) => setDraft({ ...draft, phone: e.target.value })} required />
+          <Input label="Extension" value={draft.extension} onChange={(e) => setDraft({ ...draft, extension: e.target.value })} />
           <Input label="Department" value={draft.department} onChange={(e) => setDraft({ ...draft, department: e.target.value })} />
-          <Input label="Email" type="email" value={draft.email ?? ''} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
+          <Input label="Email" type="email" value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} />
           {formError ? <p role="alert" className="text-sm text-danger">{formError}</p> : null}
         </form>
       </Modal>

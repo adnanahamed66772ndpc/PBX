@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState, type ReactNode } from 'react'
+import { useRouter } from 'next/navigation'
 import { Card } from '@/components/ui/Card'
 import { Table } from '@/components/ui/Table'
 import { Badge } from '@/components/ui/Badge'
-import { get, ApiError } from '@/lib/api'
+import { get, ApiError, getToken } from '@/lib/api'
+import { useAuth } from '@/lib/useAuth'
 import type {
   CallRecord,
   CallStatus,
@@ -29,11 +31,23 @@ function MetricIcon({ path }: { path: string }) {
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
+  const { user } = useAuth()
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const isViewer = user?.role === 'viewer'
+
   useEffect(() => {
+    if (!getToken()) {
+      router.push('/login')
+      return
+    }
+    if (user && user.role === 'superadmin' && user.tenantId === null) {
+      router.push('/tenants')
+      return
+    }
     let cancelled = false
     async function load() {
       setLoading(true)
@@ -57,7 +71,7 @@ export default function DashboardPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [router, user])
 
   const metrics: MetricCard[] = summary
     ? [
@@ -69,6 +83,13 @@ export default function DashboardPage() {
     : []
 
   function renderTable(): ReactNode {
+    if (isViewer) {
+      return (
+        <p className="px-4 py-6 text-sm text-text-muted">
+          You have viewer access. Call details are hidden — contact count only.
+        </p>
+      )
+    }
     if (loading) {
       return <p className="px-4 py-6 text-text-muted">Loading recent calls…</p>
     }
@@ -119,7 +140,9 @@ export default function DashboardPage() {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-semibold text-text-primary">Dashboard</h1>
-        <p className="text-sm text-text-muted">Realtime overview of your tenant.</p>
+        <p className="text-sm text-text-muted">
+          {isViewer ? 'Overview of call counts (viewer access).' : 'Realtime overview of your tenant.'}
+        </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

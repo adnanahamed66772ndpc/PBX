@@ -22,7 +22,12 @@ export default function LoginPage() {
       const body: AuthLoginRequest = { email, password }
       const res = await post<AuthLoginResponse>('/auth/login', body)
       setToken(res.accessToken)
-      router.push('/dashboard')
+      // Redirect based on role: superadmin without a switched tenant → /tenants
+      if (res.user.role === 'superadmin' && !res.user.tenantId) {
+        router.push('/tenants')
+      } else {
+        router.push('/dashboard')
+      }
     } catch (err) {
       const status = err instanceof Error && 'status' in err ? (err as { status: number }).status : 0
       if (status === 401) {

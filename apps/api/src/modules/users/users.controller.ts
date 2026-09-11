@@ -35,14 +35,14 @@ export class UsersController {
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'List users in the current tenant' })
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.usersService.list(user.tenantId)
+    return this.usersService.list(user.tenantId!)
   }
 
   @Get(':id')
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'Get a user by id' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.usersService.getById(user.tenantId, id)
+    return this.usersService.getById(user.tenantId!, id)
   }
 
   @Post()
@@ -50,7 +50,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Create a user in the current tenant' })
   @ApiResponse({ status: 201, description: 'User created.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateUserDto) {
-    return this.usersService.create(user.tenantId, dto)
+    return this.usersService.create(user.tenantId!, dto)
   }
 
   @Patch(':id')
@@ -61,7 +61,7 @@ export class UsersController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateUserDto,
   ) {
-    return this.usersService.update(user.tenantId, id, dto)
+    return this.usersService.update(user.tenantId!, id, dto)
   }
 
   @Delete(':id')
@@ -72,7 +72,7 @@ export class UsersController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.usersService.remove(user.tenantId, id)
+    await this.usersService.remove(user.tenantId!, id)
     return { id, deleted: true }
   }
 }

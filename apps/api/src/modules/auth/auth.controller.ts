@@ -4,7 +4,10 @@ import { AuthService, type AuthTokenPair, type SafeUser } from './auth.service'
 import { LoginDto } from './dto/login.dto'
 import { RegisterDto } from './dto/register.dto'
 import { TwoFactorDto } from './dto/two-factor.dto'
+import { SwitchTenantDto } from './dto/switch-tenant.dto'
+import { SuperadminSetupDto } from './dto/superadmin-setup.dto'
 import { Public } from '../../common/decorators/public.decorator'
+import { Roles } from '../../common/decorators/roles.decorator'
 import { CurrentUser } from '../../common/tenancy/current-user.decorator'
 import type { AuthenticatedUser } from '../../common/tenancy/tenant-context'
 
@@ -84,6 +87,28 @@ export class AuthController {
   @ApiOperation({ summary: 'Current authenticated user profile' })
   @ApiResponse({ status: 200, description: 'Public user profile.' })
   me(@CurrentUser() user: AuthenticatedUser): Promise<SafeUser> {
-    return this.authService.me(user.id)
+    return this.authService.me(user.id, user.tenantId)
+  }
+
+  @Post('switch-tenant')
+  @ApiBearerAuth('access-token')
+  @Roles('superadmin')
+  @ApiOperation({ summary: 'Switch superadmin active tenant — issues a new token pair scoped to the target tenant' })
+  @ApiResponse({ status: 200, description: 'New token pair scoped to the target tenant.' })
+  @ApiResponse({ status: 403, description: 'Only superadmin can switch tenants.' })
+  switchTenant(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SwitchTenantDto,
+  ): Promise<AuthTokenPair & { user: SafeUser }> {
+    return this.authService.switchTenant(user.id, dto.tenantId)
+  }
+
+  @Public()
+  @Post('superadmin/setup')
+  @ApiOperation({ summary: 'One-time superadmin provisioning (refuses if one already exists)' })
+  @ApiResponse({ status: 201, description: 'Superadmin created; token pair issued.' })
+  @ApiResponse({ status: 409, description: 'A superadmin already exists.' })
+  setupSuperAdmin(@Body() dto: SuperadminSetupDto): Promise<AuthTokenPair & { user: SafeUser }> {
+    return this.authService.setupSuperAdmin(dto.email, dto.password, dto.fullName)
   }
 }

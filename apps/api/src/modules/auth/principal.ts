@@ -10,7 +10,7 @@ import type { Role } from '@pbx/db'
  */
 export interface JwtPayload {
   sub: number
-  tenantId: number
+  tenantId: number | null
   role: Role
   email: string
 }

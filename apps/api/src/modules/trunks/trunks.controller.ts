@@ -29,14 +29,14 @@ export class TrunksController {
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'List SIP trunks in the current tenant' })
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.trunksService.list(user.tenantId)
+    return this.trunksService.list(user.tenantId!)
   }
 
   @Get(':id')
   @Roles('owner', 'admin', 'manager')
   @ApiOperation({ summary: 'Get a SIP trunk by id' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.trunksService.getById(user.tenantId, id)
+    return this.trunksService.getById(user.tenantId!, id)
   }
 
   @Post()
@@ -44,7 +44,7 @@ export class TrunksController {
   @ApiOperation({ summary: 'Register a SIP trunk' })
   @ApiResponse({ status: 201, description: 'Trunk created.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateSipTrunkDto) {
-    return this.trunksService.create(user.tenantId, dto)
+    return this.trunksService.create(user.tenantId!, dto)
   }
 
   @Patch(':id')
@@ -55,7 +55,7 @@ export class TrunksController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateSipTrunkDto,
   ) {
-    return this.trunksService.update(user.tenantId, id, dto)
+    return this.trunksService.update(user.tenantId!, id, dto)
   }
 
   @Delete(':id')
@@ -66,7 +66,7 @@ export class TrunksController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.trunksService.remove(user.tenantId, id)
+    await this.trunksService.remove(user.tenantId!, id)
     return { id, deleted: true }
   }
 }

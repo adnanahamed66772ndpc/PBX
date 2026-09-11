@@ -30,14 +30,14 @@ export class QueuesController {
   @Roles('owner', 'admin', 'manager', 'agent')
   @ApiOperation({ summary: 'List queues in the current tenant' })
   list(@CurrentUser() user: AuthenticatedUser) {
-    return this.queuesService.list(user.tenantId)
+    return this.queuesService.list(user.tenantId!)
   }
 
   @Get(':id')
   @Roles('owner', 'admin', 'manager', 'agent')
   @ApiOperation({ summary: 'Get a queue by id' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.queuesService.getById(user.tenantId, id)
+    return this.queuesService.getById(user.tenantId!, id)
   }
 
   @Post()
@@ -45,7 +45,7 @@ export class QueuesController {
   @ApiOperation({ summary: 'Create a queue' })
   @ApiResponse({ status: 201, description: 'Queue created.' })
   create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateQueueDto) {
-    return this.queuesService.create(user.tenantId, dto)
+    return this.queuesService.create(user.tenantId!, dto)
   }
 
   @Patch(':id')
@@ -56,7 +56,7 @@ export class QueuesController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: UpdateQueueDto,
   ) {
-    return this.queuesService.update(user.tenantId, id, dto)
+    return this.queuesService.update(user.tenantId!, id, dto)
   }
 
   @Delete(':id')
@@ -67,7 +67,7 @@ export class QueuesController {
     @CurrentUser() user: AuthenticatedUser,
     @Param('id', ParseIntPipe) id: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.queuesService.remove(user.tenantId, id)
+    await this.queuesService.remove(user.tenantId!, id)
     return { id, deleted: true }
   }
 
@@ -77,7 +77,7 @@ export class QueuesController {
   @Roles('owner', 'admin', 'manager', 'agent')
   @ApiOperation({ summary: 'List members of a queue' })
   listMembers(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.queuesService.listMembers(user.tenantId, id)
+    return this.queuesService.listMembers(user.tenantId!, id)
   }
 
   @Post(':id/members')
@@ -89,7 +89,7 @@ export class QueuesController {
     @Param('id', ParseIntPipe) id: number,
     @Body() dto: AddQueueMemberDto,
   ) {
-    return this.queuesService.addMember(user.tenantId, id, dto)
+    return this.queuesService.addMember(user.tenantId!, id, dto)
   }
 
   @Delete(':id/members/:memberId')
@@ -101,7 +101,7 @@ export class QueuesController {
     @Param('id', ParseIntPipe) id: number,
     @Param('memberId', ParseIntPipe) memberId: number,
   ): Promise<{ id: number; deleted: true }> {
-    await this.queuesService.removeMember(user.tenantId, id, memberId)
+    await this.queuesService.removeMember(user.tenantId!, id, memberId)
     return { id: memberId, deleted: true }
   }
 }

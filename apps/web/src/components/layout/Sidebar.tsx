@@ -3,17 +3,20 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import type { Presence } from '@pbx/db'
+import type { Presence, Role } from '@pbx/db'
 import { Badge } from '@/components/ui/Badge'
+import { useAuth, canSeeRoute } from '@/lib/useAuth'
 
 interface NavItem {
   href: string
   label: string
   icon: string
+  roles?: Role[]
 }
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: 'grid' },
+  { href: '/tenants', label: 'Tenants', icon: 'building', roles: ['superadmin'] },
   { href: '/dialer', label: 'Dialer', icon: 'phone' },
   { href: '/contacts', label: 'Contacts', icon: 'users' },
   { href: '/call-history', label: 'Call History', icon: 'clock' },
@@ -45,6 +48,12 @@ function NavIcon({ name }: { name: string }) {
           <rect x="14" y="3" width="7" height="7" rx="1" />
           <rect x="3" y="14" width="7" height="7" rx="1" />
           <rect x="14" y="14" width="7" height="7" rx="1" />
+        </svg>
+      )
+    case 'building':
+      return (
+        <svg {...common}>
+          <path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3M9 9v.01M9 12v.01M9 15v.01M9 18v.01" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )
     case 'phone':
@@ -95,11 +104,20 @@ export interface SidebarProps {
 
 export function Sidebar({
   presence = 'available',
-  userName = 'Agent',
-  tenantName = 'PBX Tenant',
-}: SidebarProps) {
+  userName: userNameProp,
+  tenantName: tenantNameProp,
+}: SidebarProps = {}) {
   const pathname = usePathname()
   const [mobileOpen, setMobileOpen] = useState(false)
+  const { user } = useAuth()
+
+  const userName = userNameProp ?? user?.fullName ?? user?.email ?? 'User'
+  const tenantName = tenantNameProp ?? (user?.role === 'superadmin' ? 'Platform' : 'PBX Tenant')
+  const role = user?.role
+  const visibleNav = NAV.filter((item) => {
+    if (item.roles && role && !item.roles.includes(role)) return false
+    return canSeeRoute(role, item.href)
+  })
 
   return (
     <>
@@ -151,7 +169,7 @@ export function Sidebar({
 
         <nav aria-label="Primary" className="flex-1 overflow-y-auto px-2 py-3">
           <ul className="flex flex-col gap-1">
-            {NAV.map((item) => {
+            {visibleNav.map((item) => {
               const active = pathname === item.href || pathname?.startsWith(`${item.href}/`)
               return (
                 <li key={item.href}>

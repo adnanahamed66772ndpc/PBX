@@ -22,7 +22,7 @@ export class CdrController {
   @ApiOperation({ summary: 'List call records with filters + pagination' })
   @ApiResponse({ status: 200, description: 'Paginated list of CDR rows.' })
   list(@CurrentUser() user: AuthenticatedUser, @Query() query: CdrQueryDto) {
-    return this.cdrService.list(user.tenantId, query)
+    return this.cdrService.list(user.tenantId!, query)
   }
 
   @Get(':id')
@@ -31,6 +31,6 @@ export class CdrController {
   @ApiResponse({ status: 200, description: 'A single CDR row.' })
   @ApiResponse({ status: 404, description: 'Call record not found.' })
   getById(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
-    return this.cdrService.getById(user.tenantId, id)
+    return this.cdrService.getById(user.tenantId!, id)
   }
 }

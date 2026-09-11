@@ -29,7 +29,7 @@ export interface AuthTokenPair {
 /** Public projection of a user (password / totp secret never exposed). */
 export interface SafeUser {
   id: number
-  tenantId: number
+  tenantId: number | null
   email: string
   fullName: string | null
   role: string
@@ -216,7 +216,7 @@ export class AuthService {
   }
 
   /** Returns the authenticated user's public profile. */
-  async me(userId: number): Promise<SafeUser> {
+  async me(userId: number, tenantId?: number | null): Promise<SafeUser> {
     const db = getDb()
     const { rows } = await db.query<User>(
       'SELECT id, tenant_id, email, full_name, role, presence, active, totp_secret FROM users WHERE id = $1',
@@ -226,20 +226,79 @@ export class AuthService {
     if (!user) {
       throw Errors.notFound('user')
     }
-    return toSafeUser(user)
+    // For superadmin, use the JWT's tenantId (may be null or a switched target).
+    const effectiveTenantId = user.role === 'superadmin' ? (tenantId ?? null) : user.tenant_id
+    return toSafeUser(user, effectiveTenantId)
+  }
+
+  /**
+   * Switch the current superadmin's active tenant. Issues a new access JWT
+   * with the target tenantId embedded so all subsequent requests are scoped
+   * to that tenant. Only callable by superadmin.
+   */
+  async switchTenant(userId: number, targetTenantId: number): Promise<AuthTokenPair & { user: SafeUser }> {
+    const db = getDb()
+    const { rows } = await db.query<User>(
+      'SELECT id, tenant_id, email, role, active FROM users WHERE id = $1 AND active = true',
+      [userId],
+    )
+    const user = rows[0]
+    if (!user) {
+      throw Errors.unauthorized()
+    }
+    if (user.role !== 'superadmin') {
+      throw Errors.forbidden()
+    }
+    // Verify the target tenant exists and is active.
+    const { rows: tenantRows } = await db.query<{ id: number }>(
+      'SELECT id FROM tenants WHERE id = $1 AND active = true',
+      [targetTenantId],
+    )
+    if (tenantRows.length === 0) {
+      throw Errors.notFound('tenant')
+    }
+    // Mint a new pair with the target tenantId embedded in the JWT.
+    const tokens = await this.mintPair(user, targetTenantId)
+    return { ...tokens, user: toSafeUser(user, targetTenantId) }
+  }
+
+  /**
+   * One-time superadmin provisioning. Creates a platform-level superadmin
+   * with no tenant_id (NULL). The endpoint is guarded by a setup key so it
+   * can only be called once (it refuses if a superadmin already exists).
+   */
+  async setupSuperAdmin(email: string, password: string, fullName: string): Promise<AuthTokenPair & { user: SafeUser }> {
+    const db = getDb()
+    // Refuse if any superadmin already exists — one-time setup only.
+    const { rows: existing } = await db.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM users WHERE role = 'superadmin'",
+    )
+    if (parseInt(existing[0].count, 10) > 0) {
+      throw new AppError('superadmin_exists', 'Superadmin account already exists', 409)
+    }
+    const passwordHash = await bcrypt.hash(password, 12)
+    const { rows } = await db.query<User>(
+      `INSERT INTO users (tenant_id, email, password_hash, full_name, role, presence, active)
+       VALUES (NULL, $1, $2, $3, 'superadmin', 'available', true)
+       RETURNING id, tenant_id, email, full_name, role, presence, active, totp_secret`,
+      [email, passwordHash, fullName],
+    )
+    const user = rows[0]
+    this.logger.log(`Superadmin created: ${email}`)
+    return this.issueTokensForUser(user)
   }
 
   // ---- internal helpers -------------------------------------------------
 
-  private async issueTokensForUser(user: User): Promise<AuthTokenPair & { user: SafeUser }> {
-    const tokens = await this.mintPair(user)
-    return { ...tokens, user: toSafeUser(user) }
+  private async issueTokensForUser(user: User, tenantIdOverride?: number | null): Promise<AuthTokenPair & { user: SafeUser }> {
+    const tokens = await this.mintPair(user, tenantIdOverride)
+    return { ...tokens, user: toSafeUser(user, tenantIdOverride) }
   }
 
-  private async mintPair(user: User): Promise<AuthTokenPair> {
+  private async mintPair(user: User, tenantIdOverride?: number | null): Promise<AuthTokenPair> {
     const accessPayload: JwtPayload = {
       sub: user.id,
-      tenantId: user.tenant_id,
+      tenantId: tenantIdOverride !== undefined ? tenantIdOverride : user.tenant_id,
       role: user.role,
       email: user.email,
     }
@@ -285,10 +344,10 @@ function randomToken(): string {
 }
 
 /** Strip sensitive fields before returning a user to the client. */
-function toSafeUser(user: User): SafeUser {
+function toSafeUser(user: User, effectiveTenantId?: number | null): SafeUser {
   return {
     id: user.id,
-    tenantId: user.tenant_id,
+    tenantId: effectiveTenantId !== undefined ? effectiveTenantId : user.tenant_id,
     email: user.email,
     fullName: user.full_name ?? null,
     role: user.role,
