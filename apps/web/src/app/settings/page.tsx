@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { QRCodeSVG } from 'qrcode.react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Badge } from '@/components/ui/Badge'
@@ -170,7 +171,7 @@ export default function SettingsPage() {
               Scan this QR code with your authenticator app:
             </p>
             <div className="rounded-md border border-border bg-white p-4">
-              <QRCodeSVG text={setup.otpauthUrl} size={200} />
+              <QRCodeSVG value={setup.otpauthUrl} size={200} level="M" />
             </div>
             <p className="mt-2 break-all text-xs text-text-muted">
               Secret: <code className="font-mono">{setup.secret}</code>
@@ -214,33 +215,6 @@ export default function SettingsPage() {
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-/** Lightweight inline SVG QR code renderer (no external dependency). */
-function QRCodeSVG({ text, size = 200 }: { text: string; size?: number }) {
-  // Render the otpauth:// URI as a link the user can open in a QR generator.
-  // For a production app, include a proper QR library; this provides a
-  // clickable link + the raw URI so users can paste into authenticator apps.
-  const encoded = encodeURIComponent(text)
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <a
-        href={`https://api.qrserver.com/v1/create-qr-code/?size=${size}x${size}&data=${encoded}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-sm text-primary underline"
-      >
-        Click to view QR code
-      </a>
-      <textarea
-        readOnly
-        value={text}
-        className="w-full max-w-xs resize-none rounded-md border border-border bg-surface px-2 py-1 text-xs text-text-muted"
-        rows={3}
-        aria-label="OTP auth URI"
-      />
     </div>
   )
 }
