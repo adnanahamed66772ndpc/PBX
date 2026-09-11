@@ -218,7 +218,7 @@ export class VoicemailService {
     const fields: Record<string, string> = {}
     for (const line of raw.split(/\r?\n/)) {
       const eq = line.indexOf('=')
-      if (eq > 0) fields[line.slice(0, eq).trim()] = line.slice(eq + 1).trim()
+      if (eq > 0) fields[line.slice(0, eq).trim().toLowerCase()] = line.slice(eq + 1).trim()
     }
     const audioPath = await this.findAudio(inbox, file)
     if (!audioPath) return null
@@ -229,11 +229,12 @@ export class VoicemailService {
       return null
     }
     return {
+      // Asterisk writes lowercase keys: origmailbox, callerid, duration.
       txtPath,
       audioPath,
-      mailbox: fields['Origmailbox'] || mailbox,
-      callerNum: extractCallerNumber(fields['CallerID']),
-      durationSec: Math.max(0, parseInt(fields['Duration'] ?? '0', 10) || 0),
+      mailbox: fields['origmailbox'] || mailbox,
+      callerNum: extractCallerNumber(fields['callerid']),
+      durationSec: Math.max(0, parseInt(fields['duration'] ?? '0', 10) || 0),
       receivedAt: info.mtime,
     }
   }
