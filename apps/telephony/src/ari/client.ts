@@ -46,6 +46,12 @@ export class AriClient extends EventEmitter {
   /** Backoff for reconnect attempts. */
   private reconnectDelayMs = 1_000
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  /** Heartbeat interval — checks WebSocket liveness every 30s. */
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null
+  /** Connect timeout — reject if open doesn't fire within 15s. */
+  private connectTimer: ReturnType<typeof setTimeout> | null = null
+  /** Timestamp (ms) of last WebSocket open or inbound event. */
+  private lastEventAt = 0
 
   constructor(opts: AriClientOptions) {
     super()
@@ -60,6 +66,8 @@ export class AriClient extends EventEmitter {
   /** Open the WebSocket event stream; reconnects automatically on close. */
   connect(): Promise<void> {
     this.closed = false
+    this.lastEventAt = Date.now()
+    this.startHeartbeat()
     return this.openWebSocket()
   }
 
@@ -70,6 +78,14 @@ export class AriClient extends EventEmitter {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
     }
+    if (this.connectTimer) {
+      clearTimeout(this.connectTimer)
+      this.connectTimer = null
+    }
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer)
+      this.heartbeatTimer = null
+    }
     if (this.ws) {
       try {
         this.ws.close()
@@ -78,6 +94,42 @@ export class AriClient extends EventEmitter {
       }
       this.ws = null
     }
+  }
+
+  // ── heartbeat ─────────────────────────────────────────────────────────
+
+  /**
+   * Periodically verify the WebSocket is still alive. If the connection
+   * appears stale or not OPEN, force a reconnect. This catches cases where
+   * the close event never fires (half-open TCP, NAT timeout, etc.).
+   */
+  private startHeartbeat(): void {
+    if (this.heartbeatTimer) return
+    this.heartbeatTimer = setInterval(() => {
+      if (this.closed) return
+      const ready = this.ws?.readyState
+      // WebSocket not OPEN — should be reconnecting already, but force it.
+      if (ready !== WebSocket.OPEN) {
+        if (!this.reconnectTimer && !this.connectTimer) {
+          log.warn({ readyState: ready }, 'ARI heartbeat: ws not OPEN, forcing reconnect')
+          if (this.ws) {
+            try { this.ws.close() } catch { /* ignore */ }
+          }
+          this.ws = null
+          this.scheduleReconnect()
+        }
+        return
+      }
+      // WebSocket is OPEN — check for stale connection (no events for 120s).
+      const idleMs = Date.now() - this.lastEventAt
+      if (idleMs > 120_000) {
+        log.warn({ idleMs }, 'ARI heartbeat: connection stale, forcing reconnect')
+        try { this.ws?.close() } catch { /* ignore */ }
+        this.ws = null
+        this.lastEventAt = Date.now()
+        this.scheduleReconnect()
+      }
+    }, 30_000)
   }
 
   // ── event stream ─────────────────────────────────────────────────────
@@ -113,24 +165,46 @@ export class AriClient extends EventEmitter {
       const ws = new WebSocket(this.wsUrl())
       this.ws = ws
 
+      // Connect timeout — if the WebSocket doesn't open within 15s, give up
+      // and let the close handler schedule a reconnect.
+      this.connectTimer = setTimeout(() => {
+        log.warn('ARI connect timeout (15s)')
+        try { ws.close() } catch { /* ignore */ }
+        reject(new Error('ARI connect timeout'))
+      }, 15_000)
+
       ws.addEventListener('open', () => {
+        if (this.connectTimer) {
+          clearTimeout(this.connectTimer)
+          this.connectTimer = null
+        }
         log.info({ app: this.app }, 'ARI websocket connected')
         this.reconnectDelayMs = 1_000
+        this.lastEventAt = Date.now()
         this.emit('connected')
         resolve()
       })
 
       ws.addEventListener('message', (ev: MessageEvent) => {
+        this.lastEventAt = Date.now()
         this.handleMessage(ev.data)
       })
 
       ws.addEventListener('error', (ev: Event) => {
         log.error({ err: ev }, 'ARI websocket error')
+        if (this.connectTimer) {
+          clearTimeout(this.connectTimer)
+          this.connectTimer = null
+        }
         // The close handler below owns reconnect; surface + reject first connect.
         reject(new Error('ARI websocket error'))
       })
 
       ws.addEventListener('close', (ev: CloseEvent) => {
+        if (this.connectTimer) {
+          clearTimeout(this.connectTimer)
+          this.connectTimer = null
+        }
         log.warn({ code: ev.code, reason: ev.reason }, 'ARI websocket closed')
         this.emit('disconnected')
         this.ws = null
@@ -148,7 +222,7 @@ export class AriClient extends EventEmitter {
       this.reconnectTimer = null
       log.info({ delay }, 'ARI reconnecting')
       this.openWebSocket().catch(() => {
-        /* error already logged; next close will reschedule */
+        /* error already logged; close handler will reschedule */
       })
     }, delay)
   }
