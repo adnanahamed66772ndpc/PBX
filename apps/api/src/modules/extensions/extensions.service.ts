@@ -144,7 +144,13 @@ export class ExtensionsService {
     const ext = rows[0]
     const publicHost = process.env.PUBLIC_HOST ?? process.env.SIP_DOMAIN ?? 'localhost'
     const wssPort = process.env.PJSIP_WSS_PORT ?? '8089'
-    const wssUrl = `wss://${publicHost}:${wssPort}/ws`
+    // When WSS goes through the Nginx reverse proxy on port 443 (the common
+    // deployment), omit the port so the browser uses the default 443 and
+    // benefits from the Let's Encrypt cert on Nginx rather than Asterisk's
+    // self-signed cert on 8089.
+    const wssUrl = wssPort === '443'
+      ? `wss://${publicHost}/ws`
+      : `wss://${publicHost}:${wssPort}/ws`
     const stunHost = process.env.COTURN_HOST ?? publicHost
     const stunPort = process.env.COTURN_PORT ?? '3478'
     const turnsPort = process.env.TURNS_PORT ?? '5349'
