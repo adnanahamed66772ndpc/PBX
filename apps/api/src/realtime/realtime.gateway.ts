@@ -108,8 +108,14 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     ws.on('pong', () => {
       full.alive = true
     })
-    ws.on('close', () => this.clients.delete(full))
-    ws.on('error', () => this.clients.delete(full))
+    ws.on('close', (code, reason) => {
+      this.logger.warn(`client closed userId=${full.userId} code=${code} reason=${reason.toString()}`)
+      this.clients.delete(full)
+    })
+    ws.on('error', (err) => {
+      this.logger.warn(`client error userId=${full.userId}: ${err.message}`)
+      this.clients.delete(full)
+    })
     ws.on('message', () => {
       // Clients only receive; any stray message is answered with a hint.
       try {
@@ -143,7 +149,8 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
       try {
         client.ws.send(payload)
         sent++
-      } catch {
+      } catch (err) {
+        this.logger.warn(`broadcast send failed readyState=${client.ws.readyState}: ${(err as Error).message}`)
         this.clients.delete(client)
       }
     }
