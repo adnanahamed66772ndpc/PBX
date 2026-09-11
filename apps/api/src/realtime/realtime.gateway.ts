@@ -99,7 +99,10 @@ export class RealtimeGateway implements OnModuleInit, OnModuleDestroy {
     )
     if (!rows.length) throw new Error('user not found')
     const user = rows[0]
-    const tenantId = user.role === 'superadmin' ? payload.tenantId ?? null : user.tenant_id
+    // pg returns BIGINT columns as strings — normalize to number so tenant
+    // filtering compares consistently with the numeric NATS event field.
+    const rawTenant = user.role === 'superadmin' ? payload.tenantId ?? null : user.tenant_id
+    const tenantId = rawTenant === null || rawTenant === undefined ? null : Number(rawTenant)
     return { userId, role: user.role, tenantId }
   }
 
